@@ -1,0 +1,40 @@
+Shader "Custom/SimpleQuadShader"
+{
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" }
+        
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 4.5
+            
+            #include "UnityCG.cginc"
+            
+            StructuredBuffer<float3> VertexBuffer;
+            StructuredBuffer<float4> VertexColorBuffer;
+            
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float4 color : COLOR;
+            };
+            
+            v2f vert(uint vertexID : SV_VertexID)
+            {
+                v2f o;
+                o.pos = UnityObjectToClipPos(float4(VertexBuffer[vertexID], 1.0));
+                o.color = VertexColorBuffer[vertexID];
+                return o;
+            }
+            
+            float4 frag(v2f i) : SV_Target
+            {
+                return i.color;
+            }
+            ENDCG
+        }
+    }
+}

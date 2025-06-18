@@ -1,0 +1,97 @@
+#pragma kernel CSMain
+
+struct SegmentData
+{
+    float4 segment; // x,y = start point, z,w = end point
+};
+
+struct VertexData
+{
+    float3 position;
+};
+
+struct SegmentColor
+{
+    float4 color1; // Color for the first vertex
+    float4 color2; // Color for the second vertex
+};
+
+StructuredBuffer<SegmentData> segmentBuffer;
+StructuredBuffer<SegmentColor> segmentColorBuffer;
+RWStructuredBuffer<VertexData> vertexBuffer;
+RWStructuredBuffer<float4> vertexColorBuffer;
+RWStructuredBuffer<int> segmentCountBuffer;
+RWStructuredBuffer<int> vertexCountBuffer;
+
+float lineWidth;
+
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    
+    uint segmentIndex = id.x;
+
+    int actualSegmentCount = segmentCountBuffer[0];
+    if (segmentIndex >= (uint)actualSegmentCount)
+        return;
+
+    
+    SegmentData segmentData = segmentBuffer[segmentIndex];
+    float4 segment = segmentData.segment;
+
+    SegmentColor segmentColor = segmentColorBuffer[segmentIndex];
+    
+    
+    float3 start = float3(segment.x, segment.y, 0);
+    float3 end = float3(segment.z, segment.w, 0);
+    
+    // Check if segment is valid (same validation as original)
+    float segmentLength = distance(start, end);
+    bool isValid = segmentLength > 0.001f && 
+                   !isnan(segment.x) && !isnan(segment.y) && 
+                   !isnan(segment.z) && !isnan(segment.w);
+    
+    if (!isValid)
+        return;
+    
+    // Calculate perpendicular direction for line width
+    float3 direction = normalize(end - start);
+    float3 perpendicular = float3(-direction.y, direction.x, 0) * lineWidth * 0.5f;
+    
+    // Calculate quad corners
+    float3 bl = start - perpendicular; // bottom-left
+    float3 tl = start + perpendicular; // top-left
+    float3 br = end - perpendicular;   // bottom-right
+    float3 tr = end + perpendicular;   // top-right
+
+    float4 blColor = segmentColor.color1;
+    float4 tlColor = segmentColor.color1;
+    float4 brColor = segmentColor.color2;
+    float4 trColor = segmentColor.color2;
+
+    
+    // Compacted index
+    uint vertexIndex;
+    InterlockedAdd(vertexCountBuffer[0], 6, vertexIndex);
+
+    
+    
+    // First triangle: bl, tl, br
+    vertexBuffer[vertexIndex + 0].position = bl;
+    vertexBuffer[vertexIndex + 1].position = tl;
+    vertexBuffer[vertexIndex + 2].position = br;
+
+    vertexColorBuffer[vertexIndex + 0] = blColor;
+    vertexColorBuffer[vertexIndex + 1] = tlColor;
+    vertexColorBuffer[vertexIndex + 2] = brColor;
+
+    // Second triangle: br, tl, tr
+    vertexBuffer[vertexIndex + 3].position = br;
+    vertexBuffer[vertexIndex + 4].position = tl;
+    vertexBuffer[vertexIndex + 5].position = tr;
+
+    vertexColorBuffer[vertexIndex + 3] = brColor;
+    vertexColorBuffer[vertexIndex + 4] = tlColor;
+    vertexColorBuffer[vertexIndex + 5] = trColor;
+}
+    
