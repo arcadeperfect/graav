@@ -10,12 +10,12 @@ public class PlanetGen : MonoBehaviour
     [Range(0, 10f)] public float frequency = 0.5f;
     public float iso = 0.5f;
     [Range(0, 0.2f)] public float lineWidth;
-    
+    [Range(0, 5)] public int blur;
+
     public ComputeShader marchingSquaresShader;
     public ComputeShader segmentsToQuadsShader;
     public ComputeShader indirectArgsShader;
     public Material material;
-    
 
 
     // private int vertexCount;
@@ -30,23 +30,36 @@ public class PlanetGen : MonoBehaviour
 
     private FieldGen.TextureRegistry textures;
 
-    private struct CachedParams
+    private struct CachedFieldParams
     {
-        public int FieldWidth;
-        public float Radius, Amplitude, Frequency, Iso, LineWidth;
-        
+        public int FieldWidth, Blur;
+        public float Radius, Amplitude, Frequency;
+
         public bool HasChanged(PlanetGen gen)
         {
-            return FieldWidth != gen.fieldWidth || 
-                   !Mathf.Approximately(Radius, gen.radius) ||
+            return FieldWidth != gen.fieldWidth
+                   || Blur != gen.blur
+                   || !Mathf.Approximately(Radius, gen.radius) ||
                    !Mathf.Approximately(Amplitude, gen.amplitude) ||
-                   !Mathf.Approximately(Frequency, gen.frequency) ||
-                   !Mathf.Approximately(Iso, gen.iso) ||
-                   !Mathf.Approximately(LineWidth, gen.lineWidth);
+                   !Mathf.Approximately(Frequency, gen.frequency);
         }
     }
 
-    private CachedParams cachedParams;
+    private struct CachedComputeParams
+    {
+        public float Iso, LineWidth;
+
+        public bool HasChanged(PlanetGen gen)
+        {
+            return
+                !Mathf.Approximately(Iso, gen.iso) ||
+                !Mathf.Approximately(LineWidth, gen.lineWidth);
+        }
+    }
+
+
+    private CachedFieldParams cachedFieldParams;
+    private CachedComputeParams cachedComputeParams;
 
 
     public void Start()
@@ -54,9 +67,9 @@ public class PlanetGen : MonoBehaviour
         print("start");
         Init();
         // Regen(fieldWidth);
-        
+        RegenField();
     }
-    
+
     void Init()
     {
         textures = new FieldGen.TextureRegistry(fieldWidth);
@@ -66,10 +79,23 @@ public class PlanetGen : MonoBehaviour
         AssignMaterialBuffers();
         renderPipeline = new RenderPipeline(this);
     }
-    
-    void Regen(int fieldWidth)
+
+    void RegenField()
     {
-        fieldGen.GetTex(textures, 0, radius, amplitude, frequency, fieldWidth);
+        if (cachedFieldParams.HasChanged(this))
+        {
+            // print("regen field");
+            fieldGen.GetTex(ref textures, 0, radius, amplitude, frequency, fieldWidth, blur);
+            computePipeline.InitBuffers(fieldWidth);
+            AssignMaterialBuffers();
+            UpdateCachedParams();
+        }
+
+        RegenCompute();
+    }
+
+    void RegenCompute()
+    {
         computePipeline.Dispatch(textures, iso, lineWidth);
         renderer.material.SetTexture("_FieldTex", textures.fields);
         renderer.material.SetTexture("_ColorTex", textures.colors);
@@ -78,23 +104,23 @@ public class PlanetGen : MonoBehaviour
 
     public void Update()
     {
-        if(cachedParams.HasChanged(this))
+        if (cachedFieldParams.HasChanged(this))
         {
-            if (cachedParams.FieldWidth != this.fieldWidth)
-            {
-                computePipeline.InitBuffers(fieldWidth);
-                AssignMaterialBuffers();
-            }
-            
-            Regen(fieldWidth);
-            UpdateCachedParams();
+            computePipeline.InitBuffers(fieldWidth);
+            AssignMaterialBuffers();
+            RegenField();
+        }
+        else if (cachedComputeParams.HasChanged(this))
+        {
+            RegenCompute();
         }
         
         if (renderPipeline != null)
         {
             renderPipeline.Render(computePipeline.DrawArgsBuffer);
         }
-        
+
+        UpdateCachedParams();
     }
 
     private void AssignMaterialBuffers()
@@ -102,7 +128,7 @@ public class PlanetGen : MonoBehaviour
         material.SetBuffer("VertexBuffer", computePipeline.VertexBuffer);
         material.SetBuffer("VertexColorBuffer", computePipeline.VertexColorBuffer);
     }
-    
+
     public void OnDestroy()
     {
         computePipeline?.Dispose();
@@ -111,12 +137,17 @@ public class PlanetGen : MonoBehaviour
 
     void UpdateCachedParams()
     {
-        cachedParams = new CachedParams
+        cachedFieldParams = new CachedFieldParams
         {
             FieldWidth = this.fieldWidth,
             Radius = this.radius,
             Amplitude = this.amplitude,
             Frequency = this.frequency,
+            Blur = this.blur
+        };
+
+        cachedComputeParams = new CachedComputeParams()
+        {
             Iso = this.iso,
             LineWidth = this.lineWidth
         };
@@ -141,14 +172,14 @@ public class PlanetGen : MonoBehaviour
         {
             this.parent = parent;
         }
-        
+
         public void InitBuffers(int newFieldWidth)
         {
             DisposeBuffers();
-            
+
             this.fieldWidth = newFieldWidth;
             int maxSegments = (newFieldWidth - 1) * (newFieldWidth - 1) * 4;
-            
+
             segmentBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Default);
             segmentColorBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Default);
             segmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
@@ -157,9 +188,9 @@ public class PlanetGen : MonoBehaviour
             indirectArgsBuffer = new ComputeBuffer(3, sizeof(int), ComputeBufferType.IndirectArguments);
             vertexCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
             DrawArgsBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
-            DrawArgsBuffer.SetData(new int[4] { 0, 1, 1, 0});
-            
-            
+            DrawArgsBuffer.SetData(new int[4] { 0, 1, 1, 0 });
+
+
             // segmentBuffer.SetData(new Vector4[maxSegments]);
             // segmentColorBuffer.SetData(new Vector4[maxSegments * 2]);
             // segmentCountBuffer.SetData(new int[1] { 0 });
@@ -172,17 +203,15 @@ public class PlanetGen : MonoBehaviour
             // vertexColorBuffer.SetData(warningColors);
             // vertexBuffer.SetData(new Vector3[maxSegments * 6]);
             // indirectArgsBuffer.SetData(new int[3] { 0, 1, 1 });
-            
+
             // parent.material.SetBuffer("VertexBuffer", VertexBuffer);
             // parent.material.SetBuffer("VertexColorBuffer", VertexColorBuffer);
         }
 
         public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
         {
-
-            
             segmentCountBuffer.SetData(counterReset);
-            
+
             // Marching Squares
             int marchingKernel = parent.marchingSquaresShader.FindKernel("MarchingSquares");
 
@@ -199,13 +228,12 @@ public class PlanetGen : MonoBehaviour
             parent.marchingSquaresShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
 
             //Segments to Quads
-            
+
             int quadKernel = parent.segmentsToQuadsShader.FindKernel("CSMain");
             int prepareArgsKernel = parent.indirectArgsShader.FindKernel("PrepareQuadGenArgs");
             int threadGroupSize = 64;
-            
 
-            
+
             parent.indirectArgsShader.SetInt("ThreadGroupSize", threadGroupSize);
             parent.indirectArgsShader.SetBuffer(prepareArgsKernel, "SegmentCountBuffer", segmentCountBuffer);
             parent.indirectArgsShader.SetBuffer(prepareArgsKernel, "IndirectArgsBuffer", indirectArgsBuffer);
@@ -217,20 +245,19 @@ public class PlanetGen : MonoBehaviour
             parent.segmentsToQuadsShader.SetBuffer(quadKernel, "vertexColorBuffer", VertexColorBuffer);
             parent.segmentsToQuadsShader.SetBuffer(quadKernel, "segmentCountBuffer", segmentCountBuffer);
             parent.segmentsToQuadsShader.SetFloat("lineWidth", lineWidth);
-            
+
             vertexCountBuffer.SetData(counterReset);
             parent.segmentsToQuadsShader.SetBuffer(quadKernel, "vertexCountBuffer", vertexCountBuffer);
-            
+
             parent.segmentsToQuadsShader.DispatchIndirect(quadKernel, indirectArgsBuffer);
-            
+
             int prepareDrawArgsKernel = parent.indirectArgsShader.FindKernel("PrepareDrawArgs");
             parent.indirectArgsShader.SetBuffer(prepareDrawArgsKernel, "DrawArgsBuffer", DrawArgsBuffer);
             parent.indirectArgsShader.SetBuffer(prepareDrawArgsKernel, "VertexCountBuffer", vertexCountBuffer);
 
             parent.indirectArgsShader.Dispatch(prepareDrawArgsKernel, 1, 1, 1);
-          
         }
-        
+
         void DisposeBuffers()
         {
             segmentBuffer?.Release();
@@ -257,20 +284,20 @@ public class PlanetGen : MonoBehaviour
         public RenderPipeline(PlanetGen parent)
         {
             this.parent = parent;
-            // parent.material.SetBuffer("VertexBuffer", parent.computePipeline.VertexBuffer);
-            // parent.material.SetBuffer("VertexColorBuffer", parent.computePipeline.VertexColorBuffer);
         }
 
         public void Render(ComputeBuffer drawArgsBuffer)
         {
             if (drawArgsBuffer == null) return;
-            int[] actualVertexCount = new int[4];
-            drawArgsBuffer.GetData(actualVertexCount);
-            print(actualVertexCount[0]);
-            Graphics.DrawProceduralIndirect(parent.material, bounds, MeshTopology.Triangles, parent.computePipeline.DrawArgsBuffer);
+
+
+            // // for sanity checks
+            // int[] actualVertexCount = new int[4];
+            // drawArgsBuffer.GetData(actualVertexCount);
+            // print(actualVertexCount[0]);
+
+            Graphics.DrawProceduralIndirect(parent.material, bounds, MeshTopology.Triangles,
+                parent.computePipeline.DrawArgsBuffer);
         }
-
-
     }
-
 }
