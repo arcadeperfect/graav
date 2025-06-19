@@ -1,397 +1,418 @@
 #pragma kernel MarchingSquaresContour
 
-// --- Original Segment Data Structures ---
-struct SegmentColor
-{
-    float4 color1;
-    float4 color2;
-};
-
-// --- New Contour Quad Data Structures ---
 struct ContourVertex
 {
-    float3 position; // xyz position (z can be 0, or a constant for height)
-    float3 normal;   // xy = 2D normal (perpendicular to contour), z = 0
-    float4 color;    // interpolated color at this vertex
+    float3 position;
+    float3 normal;
+    float4 color;
 };
 
-// --- Global Parameters ---
+struct Triangle
+{
+    ContourVertex v0;
+    ContourVertex v1;
+    ContourVertex v2;
+};
+
 float IsoValue;
 int TextureWidth;
 int TextureHeight;
+float LineWidth; // Use a simple float for thickness
 
-// --- Input Textures ---
-Texture2D<float4> ScalarFieldTexture;
+Texture2D<float>  ScalarFieldTexture;
 Texture2D<float4> ColorFieldTexture;
-Texture2D<float>  ThicknessTexture; // Per-cell thickness map
-
-// --- Output Buffers (for RAW Segments) ---
-RWStructuredBuffer<float4>       SegmentsBuffer       : register(u0); // Stores start.xy and end.xy of raw segments
-RWStructuredBuffer<int>          SegmentCountBuffer   : register(u1); // Atomic counter for raw segments
-RWStructuredBuffer<SegmentColor> SegmentColorsBuffer  : register(u2); // Colors for raw segments
-
-// --- Output Buffers (for SMOOTH Contour Quads) ---
-RWStructuredBuffer<ContourVertex> ContourVerticesBuffer : register(u3); // Stores all generated vertices for quads
-RWStructuredBuffer<uint>         ContourIndicesBuffer  : register(u4); // Stores indices for triangles
-RWStructuredBuffer<uint>         TotalVertexCountBuffer : register(u5); // Single uint for total quad vertices
-RWStructuredBuffer<uint>         TotalIndexCountBuffer  : register(u6); // Single uint for total quad indices
 
 
-// --- Helper Functions ---
+AppendStructuredBuffer<Triangle> TriangleBuffer;
+
 
 float2 InterpolateEdge(float2 p1, float2 p2, float v1, float v2, float iso)
 {
-    if (abs(v1 - v2) < 0.001f) return p1;
+    if (abs(v1 - v2) < 0.00001f) return p1;
     float t = (iso - v1) / (v2 - v1);
     return lerp(p1, p2, t);
 }
 
-float4 InterpolateColor(float4 c1, float4 c2, float v1, float v2,  float iso)
+float4 InterpolateColor(float4 c1, float4 c2, float v1, float v2, float iso)
 {
-    if (abs(v1 -v2) < 0.001f) return c1;
+    if (abs(v1 - v2) < 0.00001f) return c1;
     float t = (iso - v1) / (v2 - v1);
     return lerp(c1, c2, t);
 }
+//
+// void AddContourSegment2(float4 pA_packed, float4 cA, float4 pB_packed, float4 cB)
+// {
+//     // Unpack the two points from pA_packed and pB_packed
+//     float2 pA_inner = pA_packed.xy; // Point on IsoValue - LineWidth/2 contour
+//     float2 pA_outer = pA_packed.zw; // Point on IsoValue + LineWidth/2 contour
+//
+//     float2 pB_inner = pB_packed.xy; // Point on IsoValue - LineWidth/2 contour
+//     float2 pB_outer = pB_packed.zw; // Point on IsoValue + LineWidth/2 contour
+//
+//     ContourVertex v0, v1, v2, v3;
+//
+//     // These four vertices form a quad (a thick line segment)
+//     // v0 and v1 are from point A (one end of the segment)
+//     // v2 and v3 are from point B (the other end of the segment)
+//
+//     // Define the vertices for the quad:
+//     //  v1 ----- v2
+//     //  |        |
+//     //  v0 ----- v3
+//     // Assuming a segment from pA to pB.
+//     // Let's define the quad vertices for the thick line segment.
+//     // One side of the thick line (e.g., "inner" boundary)
+//     v0.position = float3(pA_inner, 0.0f); // A's inner point
+//     v0.normal = float3(0.0f, 0.0f, 1.0f); // Or a calculated normal if you need correct lighting
+//     v0.color = cA;
+//
+//     v3.position = float3(pB_inner, 0.0f); // B's inner point
+//     v3.normal = float3(0.0f, 0.0f, 1.0f);
+//     v3.color = cB;
+//
+//     // The other side of the thick line (e.g., "outer" boundary)
+//     v1.position = float3(pA_outer, 0.0f); // A's outer point
+//     v1.normal = float3(0.0f, 0.0f, 1.0f);
+//     v1.color = cA;
+//
+//     v2.position = float3(pB_outer, 0.0f); // B's outer point
+//     v2.normal = float3(0.0f, 0.0f, 1.0f);
+//     v2.color = cB;
+//
+//     // Now, form the two triangles that make up this quad.
+//     // Ensure consistent winding order (e.g., clockwise or counter-clockwise)
+//     // For example, triangle 1: v0, v1, v2
+//     Triangle t1;
+//     t1.v0 = v0;
+//     t1.v1 = v1;
+//     t1.v2 = v2; // This makes a triangle from inner A, outer A, outer B
+//
+//     TriangleBuffer.Append(t1);
+//
+//     // Triangle 2: v0, v2, v3
+//     Triangle t2;
+//     t2.v0 = v0;
+//     t2.v1 = v2; // This makes a triangle from inner A, outer B, inner B
+//     t2.v2 = v3;
+//
+//     TriangleBuffer.Append(t2);
+// }
+// // void AddContourSegment2(float4 pA, float4 cA, float4 pB, float4 cB)
+// // {
+// //     ContourVertex v0, v1, v2, v3;
+// //
+// //     v0.position = float3(pA.xy, 0.0f);
+// //     v0.normal = float3(0.0f, 0.0f, 1.0f); // Assuming a flat surface
+// //     v0.color = cA;
+// //
+// //     v1.position = float3(pA.yz, 0.0f);
+// //     v1.normal = float3(0.0f, 0.0f, 1.0f);
+// //     v1.color = cA;
+// //
+// //     v2.position = float3(pB.yz, 0.0f);
+// //     v2.normal = float3(0.0f, 0.0f, 1.0f);
+// //     v2.color = cB;
+// //
+// //     v3.position = float3(pB.xy, 0.0f);
+// //     v3.normal = float3(0.0f, 0.0f, 1.0f);
+// //     v3.color = cB;
+// //
+// //     Triangle t1;
+// //     t1.v0 = v0;
+// //     t1.v1 = v1;
+// //     t1.v2 = v2;
+// //     
+// //     TriangleBuffer.Append(t1);
+// //
+// //     Triangle t2;
+// //     t2.v0 = v0;
+// //     t2.v1 = v2;
+// //     t2.v2 = v3;
+// //     
+// //     TriangleBuffer.Append(t2);
+// // }
+//
+// void AddContourSegment(float2 pA, float4 cA, float2 pB, float4 cB)
+// {
+//     // Calculate the segment direction and its perpendicular normal
+//     float2 tangent = normalize(pB - pA);
+//     float3 normal = float3(tangent.y, -tangent.x, 0.0f);
+//
+//     float halfWidth = LineWidth * 0.5f;
+//
+//     // Define the 4 vertices of the quad
+//     ContourVertex v0, v1, v2, v3;
+//
+//     v0.position = float3(pA - normal.xy * halfWidth, 0.0f);
+//     v0.normal = normal;
+//     v0.color = cA;
+//
+//     v1.position = float3(pA + normal.xy * halfWidth, 0.0f);
+//     v1.normal = normal;
+//     v1.color = cA;
+//
+//     v2.position = float3(pB + normal.xy * halfWidth, 0.0f);
+//     v2.normal = normal;
+//     v2.color = cB;
+//
+//     v3.position = float3(pB - normal.xy * halfWidth, 0.0f);
+//     v3.normal = normal;
+//     v3.color = cB;
+//
+//     // Append the two triangles that form the quad.
+//     // The order of appending defines the triangles.
+//     // Triangle 1
+//
+//     Triangle t1;
+//     t1.v0 = v0;
+//     t1.v1 = v1;
+//     t1.v2 = v2;
+//     
+//     TriangleBuffer.Append(t1);
+//
+//     Triangle t2;
+//     t2.v0 = v0;
+//     t2.v1 = v2;
+//     t2.v2 = v3;
+//     
+//     TriangleBuffer.Append(t2);
+//
+// }
+//
+//
+// [numthreads(8,8,1)]
+// void MarchingSquaresContour(uint3 id : SV_DispatchThreadID)
+// {
+//     if (id.x >= TextureWidth - 1 || id.y >= TextureHeight - 1)
+//         return;
+//
+//     // 1. SAMPLE CORNERS (Same as before)
+//     float v00 = ScalarFieldTexture[id.xy].r;
+//     float v10 = ScalarFieldTexture[id.xy + uint2(1, 0)].r;
+//     float v11 = ScalarFieldTexture[id.xy + uint2(1, 1)].r;
+//     float v01 = ScalarFieldTexture[id.xy + uint2(0, 1)].r;
+//
+//     float4 c00 = ColorFieldTexture[id.xy];
+//     float4 c10 = ColorFieldTexture[id.xy + uint2(1, 0)];
+//     float4 c11 = ColorFieldTexture[id.xy + uint2(1, 1)];
+//     float4 c01 = ColorFieldTexture[id.xy + uint2(0, 1)];
+//
+//     // 2. COMPUTE CASE INDEX (Same as before)
+//     int caseIndex = (v00 > IsoValue) | (v10 > IsoValue) << 1 | (v11 > IsoValue) << 2 | (v01 > IsoValue) << 3;
+//     if (caseIndex == 0 || caseIndex == 15)
+//         return;
+//
+//
+//     // 3. INTERPOLATE EDGE CROSSINGS (Corrected)
+//     float2 p00 = id.xy / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+//     float2 p10 = (id.xy + float2(1, 0)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+//     float2 p11 = (id.xy + float2(1, 1)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+//     float2 p01 = (id.xy + float2(0, 1)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+//
+//     float4 edge0_col = InterpolateColor(c00, c10, v00, v10, IsoValue);
+//     float4 edge1_col = InterpolateColor(c10, c11, v10, v11, IsoValue);
+//     float4 edge2_col = InterpolateColor(c11, c01, v11, v01, IsoValue); // Top  
+//     float4 edge3_col = InterpolateColor(c01, c00, v01, v00, IsoValue); // Left 
+//
+//     float2 edge0_pos_A = InterpolateEdge(p00, p10, v00, v10, IsoValue - LineWidth / 2); // Bottom
+//     float2 edge0_pos_B = InterpolateEdge(p00, p10, v00, v10, IsoValue + LineWidth / 2);
+//     float2 edge1_pos_A = InterpolateEdge(p10, p11, v10, v11, IsoValue - LineWidth / 2); // Right
+//     float2 edge1_pos_B = InterpolateEdge(p10, p11, v10, v11, IsoValue + LineWidth / 2);
+//     float2 edge2_pos_A = InterpolateEdge(p11, p01, v11, v01, IsoValue - LineWidth / 2); // Top
+//     float2 edge2_pos_B = InterpolateEdge(p11, p01, v11, v01, IsoValue + LineWidth / 2);
+//     float2 edge3_pos_A = InterpolateEdge(p01, p00, v01, v00, IsoValue - LineWidth / 2); // Left
+//     float2 edge3_pos_B = InterpolateEdge(p01, p00, v01, v00, IsoValue + LineWidth / 2);
+//
+//     float4 edge0_pos = float4(edge0_pos_A, edge0_pos_B);
+//     float4 edge1_pos = float4(edge1_pos_A, edge1_pos_B);
+//     float4 edge2_pos = float4(edge2_pos_A, edge2_pos_B);
+//     float4 edge3_pos = float4(edge3_pos_A, edge3_pos_B);
+//     
+//     switch (caseIndex)
+//     {
+//     case 1:  AddContourSegment2(edge3_pos, edge3_col, edge0_pos, edge0_col); break;
+//     case 2:  AddContourSegment2(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+//     case 3:  AddContourSegment2(edge3_pos, edge3_col, edge1_pos, edge1_col); break;
+//     case 4:  AddContourSegment2(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+//     case 5:  // Saddle
+//         AddContourSegment2(edge3_pos, edge3_col, edge0_pos, edge0_col);
+//         AddContourSegment2(edge1_pos, edge1_col, edge2_pos, edge2_col);
+//         break;
+//     case 6:  AddContourSegment2(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+//     case 7:  AddContourSegment2(edge3_pos, edge3_col, edge2_pos, edge2_col); break;
+//     case 8:  AddContourSegment2(edge2_pos, edge2_col, edge3_pos, edge3_col); break;
+//     case 9:  AddContourSegment2(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+//     case 10: // Saddle
+//         AddContourSegment2(edge0_pos, edge0_col, edge1_pos, edge1_col);
+//         AddContourSegment2(edge2_pos, edge2_col, edge3_pos, edge3_col);
+//         break;
+//     case 11: AddContourSegment2(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+//     case 12: AddContourSegment2(edge1_pos, edge1_col, edge3_pos, edge3_col); break;
+//     case 13: AddContourSegment2(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+//     case 14: AddContourSegment2(edge0_pos, edge0_col, edge3_pos, edge3_col); break;
+//         
+//
+//     }
+//
+//     
+//
+//     // switch (caseIndex)
+//     // {
+//     //     case 1:  AddContourSegment(edge3_pos, edge3_col, edge0_pos, edge0_col); break;
+//     //     case 2:  AddContourSegment(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+//     //     case 3:  AddContourSegment(edge3_pos, edge3_col, edge1_pos, edge1_col); break;
+//     //     case 4:  AddContourSegment(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+//     //     case 5:  // Saddle
+//     //         AddContourSegment(edge3_pos, edge3_col, edge0_pos, edge0_col);
+//     //         AddContourSegment(edge1_pos, edge1_col, edge2_pos, edge2_col);
+//     //         break;
+//     //     case 6:  AddContourSegment(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+//     //     case 7:  AddContourSegment(edge3_pos, edge3_col, edge2_pos, edge2_col); break;
+//     //     case 8:  AddContourSegment(edge2_pos, edge2_col, edge3_pos, edge3_col); break;
+//     //     case 9:  AddContourSegment(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+//     //     case 10: // Saddle
+//     //         AddContourSegment(edge0_pos, edge0_col, edge1_pos, edge1_col);
+//     //         AddContourSegment(edge2_pos, edge2_col, edge3_pos, edge3_col);
+//     //         break;
+//     //     case 11: AddContourSegment(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+//     //     case 12: AddContourSegment(edge1_pos, edge1_col, edge3_pos, edge3_col); break;
+//     //     case 13: AddContourSegment(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+//     //     case 14: AddContourSegment(edge0_pos, edge0_col, edge3_pos, edge3_col); break;
+//     // }
+// }
 
-// Helper to add a quad (2 triangles) to the output buffers for the smooth contour
-void AddContourQuad(
-    float2 pA, float4 cA, // Start point and color of the segment
-    float2 pB, float4 cB, // End point and color of the segment
-    float thickness,
-    inout uint current_num_verts,
-    inout uint current_num_indices,
-    ContourVertex cell_verts[8], // Local array to stage vertices
-    uint cell_indices[12]        // Local array to stage indices
-) {
-    float2 tangent = normalize(pB - pA);
-    // Determine the normal (perpendicular vector).
-    // Adjust the sign (+1 or -1) of the normal based on your desired winding order
-    // and which side of the contour you want the "thickness" to extend.
-    float3 normal = float3(tangent.y, -tangent.x, 0.0f); // Points to the "left" of the segment direction
-
-    // Vertices for the quad strip
-    //   V1 --- V2
-    //   |      |
-    //   V0 --- V3
-    // (V0 corresponds to pA-offset, V1 to pA+offset, V2 to pB+offset, V3 to pB-offset)
-
-    // V0: pA offset by -normal
-    cell_verts[current_num_verts + 0].position = float3(pA - normal.xy * thickness * 0.5f, 0.0f); // Z = 0
-    cell_verts[current_num_verts + 0].normal   = normal;
-    cell_verts[current_num_verts + 0].color    = cA;
-
-    // V1: pA offset by +normal
-    cell_verts[current_num_verts + 1].position = float3(pA + normal.xy * thickness * 0.5f, 0.0f); // Z = 0
-    cell_verts[current_num_verts + 1].normal   = normal;
-    cell_verts[current_num_verts + 1].color    = cA;
-
-    // V2: pB offset by +normal
-    cell_verts[current_num_verts + 2].position = float3(pB + normal.xy * thickness * 0.5f, 0.0f); // Z = 0
-    cell_verts[current_num_verts + 2].normal   = normal;
-    cell_verts[current_num_verts + 2].color    = cB;
-
-    // V3: pB offset by -normal
-    cell_verts[current_num_verts + 3].position = float3(pB - normal.xy * thickness * 0.5f, 0.0f); // Z = 0
-    cell_verts[current_num_verts + 3].normal   = normal;
-    cell_verts[current_num_verts + 3].color    = cB;
-
-
-    // Indices for two triangles forming the quad: (V0, V1, V2) and (V0, V2, V3)
-    // Ensures consistent counter-clockwise winding.
-    cell_indices[current_num_indices + 0] = current_num_verts + 0;
-    cell_indices[current_num_indices + 1] = current_num_verts + 1;
-    cell_indices[current_num_indices + 2] = current_num_verts + 2;
-
-    cell_indices[current_num_indices + 3] = current_num_verts + 0;
-    cell_indices[current_num_indices + 4] = current_num_verts + 2;
-    cell_indices[current_num_indices + 5] = current_num_verts + 3;
-
-    current_num_verts += 4;
-    current_num_indices += 6;
+// Calculate gradient magnitude at edge midpoint for better width estimation
+float GetGradientMagnitude(uint2 baseCoord, float2 edgeDir)
+{
+    // Sample neighboring points to estimate gradient
+    float2 offset = normalize(edgeDir) * 0.5f;
+    uint2 coord1 = clamp(baseCoord + uint2(offset), uint2(0,0), uint2(TextureWidth-1, TextureHeight-1));
+    uint2 coord2 = clamp(baseCoord - uint2(offset), uint2(0,0), uint2(TextureWidth-1, TextureHeight-1));
+    
+    float val1 = ScalarFieldTexture[coord1].r;
+    float val2 = ScalarFieldTexture[coord2].r;
+    
+    return abs(val1 - val2) + 0.001f; // Add small epsilon to avoid division by zero
 }
 
+void AddContourSegmentDualIso(float4 pA_packed, float4 cA, float4 pB_packed, float4 cB)
+{
+    float2 pA_inner = pA_packed.xy;
+    float2 pA_outer = pA_packed.zw;
+    float2 pB_inner = pB_packed.xy;
+    float2 pB_outer = pB_packed.zw;
+
+    ContourVertex v0, v1, v2, v3;
+
+    v0.position = float3(pA_inner, 0.0f);
+    v0.normal = float3(0.0f, 0.0f, 1.0f);
+    v0.color = cA;
+
+    v1.position = float3(pA_outer, 0.0f);
+    v1.normal = float3(0.0f, 0.0f, 1.0f);
+    v1.color = cA;
+
+    v2.position = float3(pB_outer, 0.0f);
+    v2.normal = float3(0.0f, 0.0f, 1.0f);
+    v2.color = cB;
+
+    v3.position = float3(pB_inner, 0.0f);
+    v3.normal = float3(0.0f, 0.0f, 1.0f);
+    v3.color = cB;
+
+    Triangle t1;
+    t1.v0 = v0; t1.v1 = v1; t1.v2 = v2;
+    TriangleBuffer.Append(t1);
+
+    Triangle t2;
+    t2.v0 = v0; t2.v1 = v2; t2.v2 = v3;
+    TriangleBuffer.Append(t2);
+}
 
 [numthreads(8,8,1)]
 void MarchingSquaresContour(uint3 id : SV_DispatchThreadID)
 {
-    uint x = id.x;
-    uint y = id.y;
-
-    if (x >= TextureWidth - 1 || y >= TextureHeight - 1)
+    if (id.x >= TextureWidth - 1 || id.y >= TextureHeight - 1)
         return;
 
-    // Sample the 4 corners of this cell
-    float v00 = ScalarFieldTexture[uint2(x, y)].r;     // bottom-left
-    float v10 = ScalarFieldTexture[uint2(x + 1, y)].r;   // bottom-right
-    float v11 = ScalarFieldTexture[uint2(x + 1, y + 1)].r; // top-right
-    float v01 = ScalarFieldTexture[uint2(x, y + 1)].r;   // top-left
+    // Sample corners
+    float v00 = ScalarFieldTexture[id.xy].r;
+    float v10 = ScalarFieldTexture[id.xy + uint2(1, 0)].r;
+    float v11 = ScalarFieldTexture[id.xy + uint2(1, 1)].r;
+    float v01 = ScalarFieldTexture[id.xy + uint2(0, 1)].r;
 
-    // Sample the 4 corner colors
-    float4 c00 = ColorFieldTexture[uint2(x, y)];
-    float4 c10 = ColorFieldTexture[uint2(x + 1, y)];
-    float4 c11 = ColorFieldTexture[uint2(x + 1, y + 1)];
-    float4 c01 = ColorFieldTexture[uint2(x, y + 1)];
-    
-    // Create the case index (clockwise from bottom-left)
-    int caseIndex = 0;
-    if (v00 > IsoValue) caseIndex |= 1; // bottom-left (bit 0)
-    if (v10 > IsoValue) caseIndex |= 2; // bottom-right (bit 1)
-    if (v11 > IsoValue) caseIndex |= 4; // top-right (bit 2)
-    if (v01 > IsoValue) caseIndex |= 8; // top-left (bit 3)
+    float4 c00 = ColorFieldTexture[id.xy];
+    float4 c10 = ColorFieldTexture[id.xy + uint2(1, 0)];
+    float4 c11 = ColorFieldTexture[id.xy + uint2(1, 1)];
+    float4 c01 = ColorFieldTexture[id.xy + uint2(0, 1)];
 
-    // No contour if all points are on same side
+    int caseIndex = (v00 > IsoValue) | (v10 > IsoValue) << 1 | (v11 > IsoValue) << 2 | (v01 > IsoValue) << 3;
     if (caseIndex == 0 || caseIndex == 15)
         return;
 
-    // Get the per-cell thickness from the ThicknessTexture
-    float thickness = ThicknessTexture.Load(int3(x, y, 0)).r; // Assuming R channel stores thickness
+    // Convert to normalized coordinates
+    float2 p00 = (id.xy + float2(0, 0)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+    float2 p10 = (id.xy + float2(1, 0)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+    float2 p11 = (id.xy + float2(1, 1)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
+    float2 p01 = (id.xy + float2(0, 1)) / float2(TextureWidth, TextureHeight) * 2.0f - 1.0f;
 
-    // Cell positions normalized to [-1, 1] range
-    float2 p00 = float2(x, y) / float2(TextureWidth - 1, TextureHeight - 1) * 2.0f - 1.0f;
-    float2 p10 = float2(x + 1, y) / float2(TextureWidth - 1, TextureHeight - 1) * 2.0f - 1.0f;
-    float2 p11 = float2(x + 1, y + 1) / float2(TextureWidth - 1, TextureHeight - 1) * 2.0f - 1.0f;
-    float2 p01 = float2(x, y + 1) / float2(TextureWidth - 1, TextureHeight - 1) * 2.0f - 1.0f;
+    // Estimate gradient magnitudes for adaptive width scaling
+    float grad0 = GetGradientMagnitude(id.xy, p10 - p00); // Bottom edge
+    float grad1 = GetGradientMagnitude(id.xy + uint2(1,0), p11 - p10); // Right edge  
+    float grad2 = GetGradientMagnitude(id.xy + uint2(1,1), p01 - p11); // Top edge
+    float grad3 = GetGradientMagnitude(id.xy + uint2(0,1), p00 - p01); // Left edge
 
-    // Edge positions with interpolation (check if edge is crossed before interpolating)
-    float2 edge0_pos = ( (v00 > IsoValue) != (v10 > IsoValue) ) ? InterpolateEdge(p00, p10, v00, v10, IsoValue) : float2(0,0); // bottom edge
-    float2 edge1_pos = ( (v10 > IsoValue) != (v11 > IsoValue) ) ? InterpolateEdge(p10, p11, v10, v11, IsoValue) : float2(0,0); // right edge
-    float2 edge2_pos = ( (v01 > IsoValue) != (v11 > IsoValue) ) ? InterpolateEdge(p01, p11, v01, v11, IsoValue) : float2(0,0); // top edge
-    float2 edge3_pos = ( (v00 > IsoValue) != (v01 > IsoValue) ) ? InterpolateEdge(p00, p01, v00, v01, IsoValue) : float2(0,0); // left edge
-
-    // Edge Colors with interpolation (check if edge is crossed)
-    float4 edge0_col = ( (v00 > IsoValue) != (v10 > IsoValue) ) ? InterpolateColor(c00, c10, v00, v10, IsoValue) : float4(0,0,0,0);
-    float4 edge1_col = ( (v10 > IsoValue) != (v11 > IsoValue) ) ? InterpolateColor(c10, c11, v10, v11, IsoValue) : float4(0,0,0,0);
-    float4 edge2_col = ( (v01 > IsoValue) != (v11 > IsoValue) ) ? InterpolateColor(c01, c11, v01, v11, IsoValue) : float4(0,0,0,0);
-    float4 edge3_col = ( (v00 > IsoValue) != (v01 > IsoValue) ) ? InterpolateColor(c00, c01, v00, v01, IsoValue) : float4(0,0,0,0);
+    // Scale width based on gradient - steeper gradients need smaller offsets
+    float2 worldToNorm = 2.0f / float2(TextureWidth, TextureHeight);
+    float baseWidth = LineWidth * max(worldToNorm.x, worldToNorm.y);
     
-    // Local arrays to stage vertices and indices for the SMOOTH CONTOUR (quads)
-    ContourVertex cell_quad_verts[8];    // Max 8 vertices (for two quads in saddle cases)
-    uint cell_quad_indices[12];          // Max 12 indices (for two quads)
-    uint num_quad_verts_in_cell = 0;
-    uint num_quad_indices_in_cell = 0;
+    float width0 = baseWidth / max(grad0, 0.001f);
+    float width1 = baseWidth / max(grad1, 0.001f);
+    float width2 = baseWidth / max(grad2, 0.001f);
+    float width3 = baseWidth / max(grad3, 0.001f);
 
-    // --- Generate RAW Segments and SMOOTH Contour Quads ---
+    // Interpolate edges with gradient-compensated widths
+    float2 edge0_pos_A = InterpolateEdge(p00, p10, v00, v10, IsoValue - width0 * 0.5f);
+    float2 edge0_pos_B = InterpolateEdge(p00, p10, v00, v10, IsoValue + width0 * 0.5f);
+    float2 edge1_pos_A = InterpolateEdge(p10, p11, v10, v11, IsoValue - width1 * 0.5f);
+    float2 edge1_pos_B = InterpolateEdge(p10, p11, v10, v11, IsoValue + width1 * 0.5f);
+    float2 edge2_pos_A = InterpolateEdge(p11, p01, v11, v01, IsoValue - width2 * 0.5f);
+    float2 edge2_pos_B = InterpolateEdge(p11, p01, v11, v01, IsoValue + width2 * 0.5f);
+    float2 edge3_pos_A = InterpolateEdge(p01, p00, v01, v00, IsoValue - width3 * 0.5f);
+    float2 edge3_pos_B = InterpolateEdge(p01, p00, v01, v00, IsoValue + width3 * 0.5f);
+
+    float4 edge0_pos = float4(edge0_pos_A, edge0_pos_B);
+    float4 edge1_pos = float4(edge1_pos_A, edge1_pos_B);
+    float4 edge2_pos = float4(edge2_pos_A, edge2_pos_B);
+    float4 edge3_pos = float4(edge3_pos_A, edge3_pos_B);
+
+    // Interpolate colors
+    float4 edge0_col = InterpolateColor(c00, c10, v00, v10, IsoValue);
+    float4 edge1_col = InterpolateColor(c10, c11, v10, v11, IsoValue);
+    float4 edge2_col = InterpolateColor(c11, c01, v11, v01, IsoValue);
+    float4 edge3_col = InterpolateColor(c01, c00, v01, v00, IsoValue);
+
     switch (caseIndex)
     {
-    case 1: // bottom-left corner inside
-        // Store RAW Segment
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge3_pos, edge0_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge3_col;
-            segColor.color2 = edge0_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        // Generate SMOOTH Contour Quad
-        AddContourQuad(edge3_pos, edge3_col, edge0_pos, edge0_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 2: // bottom-right corner inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge0_pos, edge1_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge0_col;
-            segColor.color2 = edge1_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge0_pos, edge0_col, edge1_pos, edge1_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 3: // bottom edge inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge3_pos, edge1_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge3_col;
-            segColor.color2 = edge1_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge3_pos, edge3_col, edge1_pos, edge1_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 4: // top-right corner inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge1_pos, edge2_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge1_col;
-            segColor.color2 = edge2_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge1_pos, edge1_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 5: // bottom-left and top-right corners inside (saddle point)
-        // Store RAW Segments (2 segments)
-        {
-            int segIdx1, segIdx2;
-            InterlockedAdd(SegmentCountBuffer[0], 2, segIdx1);
-            segIdx2 = segIdx1 + 1;
-            SegmentsBuffer[segIdx1] = float4(edge3_pos, edge0_pos);
-            SegmentsBuffer[segIdx2] = float4(edge1_pos, edge2_pos);
-            SegmentColor segColorA;
-            segColorA.color1 = edge3_col; segColorA.color2 = edge0_col;
-            SegmentColorsBuffer[segIdx1] = segColorA;
-            SegmentColor segColorB;
-            segColorB.color1 = edge1_col; segColorB.color2 = edge2_col;
-            SegmentColorsBuffer[segIdx2] = segColorB;
-        }
-        // Generate SMOOTH Contour Quads (2 quads)
-        AddContourQuad(edge3_pos, edge3_col, edge0_pos, edge0_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        AddContourQuad(edge1_pos, edge1_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 6: // right edge inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge0_pos, edge2_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge0_col;
-            segColor.color2 = edge2_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge0_pos, edge0_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 7: // bottom and right inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge3_pos, edge2_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge3_col;
-            segColor.color2 = edge2_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge3_pos, edge3_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 8: // top-left corner inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge2_pos, edge3_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge2_col;
-            segColor.color2 = edge3_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge2_pos, edge2_col, edge3_pos, edge3_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 9: // left edge inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge0_pos, edge2_pos); // This seems reversed, should be edge3_pos, edge0_pos then edge1_pos, edge2_pos
-                                                                         // Given (v00,v10,v11,v01) and case 9 is (1001) means v00 and v01 are 'inside', so line from edge0 to edge2 is correct
-            SegmentColor segColor;
-            segColor.color1 = edge0_col;
-            segColor.color2 = edge2_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge0_pos, edge0_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 10: // top-left and bottom-right corners inside (saddle point)
-        // Store RAW Segments (2 segments)
-        {
-            int segIdx1, segIdx2;
-            InterlockedAdd(SegmentCountBuffer[0], 2, segIdx1);
-            segIdx2 = segIdx1 + 1;
-            SegmentsBuffer[segIdx1] = float4(edge0_pos, edge1_pos);
-            SegmentsBuffer[segIdx2] = float4(edge2_pos, edge3_pos);
-            SegmentColor segColorA;
-            segColorA.color1 = edge0_col; segColorA.color2 = edge1_col;
-            SegmentColorsBuffer[segIdx1] = segColorA;
-            SegmentColor segColorB;
-            segColorB.color1 = edge2_col; segColorB.color2 = edge3_col;
-            SegmentColorsBuffer[segIdx2] = segColorB;
-        }
-        // Generate SMOOTH Contour Quads (2 quads)
-        AddContourQuad(edge0_pos, edge0_col, edge1_pos, edge1_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        AddContourQuad(edge2_pos, edge2_col, edge3_pos, edge3_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 11: // bottom and left inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge1_pos, edge2_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge1_col;
-            segColor.color2 = edge2_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge1_pos, edge1_col, edge2_pos, edge2_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 12: // top edge inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge1_pos, edge3_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge1_col;
-            segColor.color2 = edge3_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge1_pos, edge1_col, edge3_pos, edge3_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 13: // left and top inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge0_pos, edge1_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge0_col;
-            segColor.color2 = edge1_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge0_pos, edge0_col, edge1_pos, edge1_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-
-    case 14: // top and right inside
-        {
-            int segmentIndex;
-            InterlockedAdd(SegmentCountBuffer[0], 1, segmentIndex);
-            SegmentsBuffer[segmentIndex] = float4(edge0_pos, edge3_pos);
-            SegmentColor segColor;
-            segColor.color1 = edge0_col;
-            segColor.color2 = edge3_col;
-            SegmentColorsBuffer[segmentIndex] = segColor;
-        }
-        AddContourQuad(edge0_pos, edge0_col, edge3_pos, edge3_col, thickness, num_quad_verts_in_cell, num_quad_indices_in_cell, cell_quad_verts, cell_quad_indices);
-        break;
-    }
-
-    // --- Write SMOOTH Contour Quads to Global Buffers ---
-    if (num_quad_verts_in_cell > 0)
-    {
-        uint global_vertex_start_idx = 0;
-        InterlockedAdd(TotalVertexCountBuffer[0], num_quad_verts_in_cell, global_vertex_start_idx);
-
-        uint global_index_start_idx = 0;
-        InterlockedAdd(TotalIndexCountBuffer[0], num_quad_indices_in_cell, global_index_start_idx);
-
-        // Write vertices
-        for (uint i = 0; i < num_quad_verts_in_cell; ++i)
-        {
-            ContourVerticesBuffer[global_vertex_start_idx + i] = cell_quad_verts[i];
-        }
-
-        // Write indices (relative to the global vertex start index)
-        for (uint i = 0; i < num_quad_indices_in_cell; ++i)
-        {
-            ContourIndicesBuffer[global_index_start_idx + i] = global_vertex_start_idx + cell_quad_indices[i];
-        }
+        case 1:  AddContourSegmentDualIso(edge3_pos, edge3_col, edge0_pos, edge0_col); break;
+        case 2:  AddContourSegmentDualIso(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+        case 3:  AddContourSegmentDualIso(edge3_pos, edge3_col, edge1_pos, edge1_col); break;
+        case 4:  AddContourSegmentDualIso(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+        case 5:  
+            AddContourSegmentDualIso(edge3_pos, edge3_col, edge0_pos, edge0_col);
+            AddContourSegmentDualIso(edge1_pos, edge1_col, edge2_pos, edge2_col);
+            break;
+        case 6:  AddContourSegmentDualIso(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+        case 7:  AddContourSegmentDualIso(edge3_pos, edge3_col, edge2_pos, edge2_col); break;
+        case 8:  AddContourSegmentDualIso(edge2_pos, edge2_col, edge3_pos, edge3_col); break;
+        case 9:  AddContourSegmentDualIso(edge0_pos, edge0_col, edge2_pos, edge2_col); break;
+        case 10: 
+            AddContourSegmentDualIso(edge0_pos, edge0_col, edge1_pos, edge1_col);
+            AddContourSegmentDualIso(edge2_pos, edge2_col, edge3_pos, edge3_col);
+            break;
+        case 11: AddContourSegmentDualIso(edge1_pos, edge1_col, edge2_pos, edge2_col); break;
+        case 12: AddContourSegmentDualIso(edge1_pos, edge1_col, edge3_pos, edge3_col); break;
+        case 13: AddContourSegmentDualIso(edge0_pos, edge0_col, edge1_pos, edge1_col); break;
+        case 14: AddContourSegmentDualIso(edge0_pos, edge0_col, edge3_pos, edge3_col); break;
     }
 }

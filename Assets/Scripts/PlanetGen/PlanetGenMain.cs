@@ -9,12 +9,13 @@ public class PlanetGen : MonoBehaviour
     [Range(0, 2f)] public float amplitude = 0.5f;
     [Range(0, 10f)] public float frequency = 0.5f;
     public float iso = 0.5f;
-    [Range(0, 0.2f)] public float lineWidth;
+    [Range(0, 1f)] public float lineWidth;
     [Range(0, 5)] public int blur;
 
-    public ComputeShader marchingSquaresShader;
-    public ComputeShader segmentsToQuadsShader;
-    public ComputeShader indirectArgsShader;
+
+    public ComputeShader MarchingSqaresToQuadsShader;
+    public ComputeShader PrepareArgsShader;
+
     public Material material;
 
 
@@ -114,7 +115,7 @@ public class PlanetGen : MonoBehaviour
         {
             RegenCompute();
         }
-        
+
         if (renderPipeline != null)
         {
             renderPipeline.Render(computePipeline.DrawArgsBuffer);
@@ -125,8 +126,7 @@ public class PlanetGen : MonoBehaviour
 
     private void AssignMaterialBuffers()
     {
-        material.SetBuffer("VertexBuffer", computePipeline.VertexBuffer);
-        material.SetBuffer("VertexColorBuffer", computePipeline.VertexColorBuffer);
+        material.SetBuffer("TriangleBuffer", computePipeline.TriangleBuffer);
     }
 
     public void OnDestroy()
@@ -157,15 +157,13 @@ public class PlanetGen : MonoBehaviour
     {
         private PlanetGen parent;
 
-        private ComputeBuffer segmentColorBuffer;
-        private ComputeBuffer segmentBuffer;
-        private ComputeBuffer segmentCountBuffer;
-        private ComputeBuffer indirectArgsBuffer;
-        private ComputeBuffer vertexCountBuffer;
-        public ComputeBuffer VertexBuffer { get; private set; }
-        public ComputeBuffer VertexColorBuffer { get; private set; }
+
+        public ComputeBuffer ContourVerticesBuffer { get; private set; }
+        public ComputeBuffer TriangleBuffer { get; private set; }
+        public ComputeBuffer TriangleCountBuffer { get; private set; }
         public ComputeBuffer DrawArgsBuffer { get; private set; }
-        private readonly int[] counterReset = { 0 };
+        public ComputeBuffer VertexCountBuffer { get; private set; }
+
         private int fieldWidth;
 
         public ComputePipeline(PlanetGen parent)
@@ -178,95 +176,127 @@ public class PlanetGen : MonoBehaviour
             DisposeBuffers();
 
             this.fieldWidth = newFieldWidth;
-            int maxSegments = (newFieldWidth - 1) * (newFieldWidth - 1) * 4;
-
-            segmentBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Default);
-            segmentColorBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Default);
-            segmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-            VertexColorBuffer = new ComputeBuffer(maxSegments * 6, sizeof(float) * 4);
-            VertexBuffer = new ComputeBuffer(maxSegments * 6, sizeof(float) * 3);
-            indirectArgsBuffer = new ComputeBuffer(3, sizeof(int), ComputeBufferType.IndirectArguments);
-            vertexCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-            DrawArgsBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
-            DrawArgsBuffer.SetData(new int[4] { 0, 1, 1, 0 });
-
-
-            // segmentBuffer.SetData(new Vector4[maxSegments]);
-            // segmentColorBuffer.SetData(new Vector4[maxSegments * 2]);
-            // segmentCountBuffer.SetData(new int[1] { 0 });
-            // float4[] warningColors = new float4[maxSegments * 6];
-            // for (int i = 0; i < warningColors.Length; i++)
-            // {
-            //     warningColors[i] = new float4(1f, 0f, 1f, 0f);
-            // }
-            //
-            // vertexColorBuffer.SetData(warningColors);
-            // vertexBuffer.SetData(new Vector3[maxSegments * 6]);
-            // indirectArgsBuffer.SetData(new int[3] { 0, 1, 1 });
-
-            // parent.material.SetBuffer("VertexBuffer", VertexBuffer);
-            // parent.material.SetBuffer("VertexColorBuffer", VertexColorBuffer);
+            int numCells = (newFieldWidth - 1) * (newFieldWidth - 1);
+            int maxVertices = numCells * 12;
+            ContourVerticesBuffer = new ComputeBuffer(maxVertices, 40, ComputeBufferType.Append);
+            TriangleBuffer = new ComputeBuffer(maxVertices, sizeof(float) * 30, ComputeBufferType.Append);
+            TriangleCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+            VertexCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+            DrawArgsBuffer = new ComputeBuffer(5, sizeof(int), ComputeBufferType.IndirectArguments);
+            DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0, 0 });
         }
+
+        // public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
+        // {
+        //     TriangleBuffer.SetCounterValue(0);
+        //
+        //     var marchingKernel = parent.MarchingSqaresToQuadsShader.FindKernel("MarchingSquaresContour");
+        //
+        //     parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ScalarFieldTexture", textures.fields);
+        //     parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ColorFieldTexture", textures.colors);
+        //     parent.MarchingSqaresToQuadsShader.SetFloat("IsoValue", iso);
+        //     parent.MarchingSqaresToQuadsShader.SetInt("TextureWidth", fieldWidth);
+        //     parent.MarchingSqaresToQuadsShader.SetInt("TextureHeight", fieldWidth);
+        //     parent.MarchingSqaresToQuadsShader.SetFloat("LineWidth", lineWidth);
+        //     parent.MarchingSqaresToQuadsShader.SetBuffer(marchingKernel, "TriangleBuffer", TriangleBuffer);
+        //
+        //     // 1. Generate triangles
+        //     int threadGroups = Mathf.CeilToInt((fieldWidth - 1) / 8f);
+        //     parent.MarchingSqaresToQuadsShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
+        //
+        //     // 2. Copy triangle count from TriangleBuffer to TriangleCountBuffer
+        //     ComputeBuffer.CopyCount(TriangleBuffer, TriangleCountBuffer, 0);
+        //
+        //     // 3. Convert triangle count to vertex count
+        //     var triangleMultKernel = parent.PrepareArgsShader.FindKernel("ConvertTriangleCountToVertexCount");
+        //     parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "TriangleCountBuffer", TriangleCountBuffer);
+        //     parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "VertexCountBuffer", VertexCountBuffer);
+        //     parent.PrepareArgsShader.Dispatch(triangleMultKernel, 1, 1, 1);
+        //
+        //     // 4. Copy vertex count to draw args
+        //     ComputeBuffer.CopyCount(VertexCountBuffer, DrawArgsBuffer, 0);
+        // }
 
         public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
         {
-            segmentCountBuffer.SetData(counterReset);
+            TriangleBuffer.SetCounterValue(0);
 
-            // Marching Squares
-            int marchingKernel = parent.marchingSquaresShader.FindKernel("MarchingSquares");
+            var marchingKernel = parent.MarchingSqaresToQuadsShader.FindKernel("MarchingSquaresContour");
 
-            parent.marchingSquaresShader.SetBuffer(marchingKernel, "SegmentsBuffer", segmentBuffer);
-            parent.marchingSquaresShader.SetBuffer(marchingKernel, "SegmentCountBuffer", segmentCountBuffer);
-            parent.marchingSquaresShader.SetBuffer(marchingKernel, "SegmentColorsBuffer", segmentColorBuffer);
-            parent.marchingSquaresShader.SetFloat("IsoValue", iso);
-            parent.marchingSquaresShader.SetInt("TextureHeight", fieldWidth);
-            parent.marchingSquaresShader.SetInt("TextureWidth", fieldWidth);
-            parent.marchingSquaresShader.SetTexture(marchingKernel, "ScalarFieldTexture", textures.fields);
-            parent.marchingSquaresShader.SetTexture(marchingKernel, "ColorFieldTexture", textures.colors);
+            parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ScalarFieldTexture", textures.fields);
+            parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ColorFieldTexture", textures.colors);
+            parent.MarchingSqaresToQuadsShader.SetFloat("IsoValue", iso);
+            parent.MarchingSqaresToQuadsShader.SetInt("TextureWidth", fieldWidth);
+            parent.MarchingSqaresToQuadsShader.SetInt("TextureHeight", fieldWidth);
+            parent.MarchingSqaresToQuadsShader.SetFloat("LineWidth", lineWidth);
+            parent.MarchingSqaresToQuadsShader.SetBuffer(marchingKernel, "TriangleBuffer", TriangleBuffer);
 
-            int threadGroups = Mathf.CeilToInt(fieldWidth / 8f);
-            parent.marchingSquaresShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
+            Debug.Log($"=== COMPUTE DISPATCH DEBUG ===");
+            Debug.Log($"Field size: {fieldWidth}x{fieldWidth}, Iso: {iso}, LineWidth: {lineWidth}");
 
-            //Segments to Quads
+            // 1. Generate triangles
+            int threadGroups = Mathf.CeilToInt((fieldWidth - 1) / 8f);
+            Debug.Log($"Dispatching {threadGroups}x{threadGroups} thread groups");
+            parent.MarchingSqaresToQuadsShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
 
-            int quadKernel = parent.segmentsToQuadsShader.FindKernel("CSMain");
-            int prepareArgsKernel = parent.indirectArgsShader.FindKernel("PrepareQuadGenArgs");
-            int threadGroupSize = 64;
+            // 2. Copy triangle count from TriangleBuffer to TriangleCountBuffer
+            ComputeBuffer.CopyCount(TriangleBuffer, TriangleCountBuffer, 0);
 
+            // DEBUG: Read triangle count
+            int[] triangleCountData = new int[1];
+            TriangleCountBuffer.GetData(triangleCountData);
+            Debug.Log($"Triangles generated: {triangleCountData[0]}");
 
-            parent.indirectArgsShader.SetInt("ThreadGroupSize", threadGroupSize);
-            parent.indirectArgsShader.SetBuffer(prepareArgsKernel, "SegmentCountBuffer", segmentCountBuffer);
-            parent.indirectArgsShader.SetBuffer(prepareArgsKernel, "IndirectArgsBuffer", indirectArgsBuffer);
-            parent.indirectArgsShader.Dispatch(prepareArgsKernel, 1, 1, 1);
+            // 3. Convert triangle count to vertex count
+            var triangleMultKernel = parent.PrepareArgsShader.FindKernel("ConvertTriangleCountToVertexCount");
+            parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "TriangleCountBuffer", TriangleCountBuffer);
+            parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "VertexCountBuffer", VertexCountBuffer);
+            parent.PrepareArgsShader.Dispatch(triangleMultKernel, 1, 1, 1);
 
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "segmentBuffer", segmentBuffer);
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "segmentColorBuffer", segmentColorBuffer);
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "vertexBuffer", VertexBuffer);
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "vertexColorBuffer", VertexColorBuffer);
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "segmentCountBuffer", segmentCountBuffer);
-            parent.segmentsToQuadsShader.SetFloat("lineWidth", lineWidth);
+            // DEBUG: Read vertex count
+            int[] vertexCountData = new int[1];
+            VertexCountBuffer.GetData(vertexCountData);
+            Debug.Log($"Vertex count: {vertexCountData[0]}");
 
-            vertexCountBuffer.SetData(counterReset);
-            parent.segmentsToQuadsShader.SetBuffer(quadKernel, "vertexCountBuffer", vertexCountBuffer);
+            // 4. Copy vertex count to draw args
+            var copyKernel = parent.PrepareArgsShader.FindKernel("CopyVertexCountToDrawArgs");
+            parent.PrepareArgsShader.SetBuffer(copyKernel, "VertexCountBuffer", VertexCountBuffer);
+            parent.PrepareArgsShader.SetBuffer(copyKernel, "DrawArgsBuffer", DrawArgsBuffer);
+            parent.PrepareArgsShader.Dispatch(copyKernel, 1, 1, 1);
 
-            parent.segmentsToQuadsShader.DispatchIndirect(quadKernel, indirectArgsBuffer);
+            // DEBUG: Read draw args
+            int[] drawArgsData = new int[5];
+            DrawArgsBuffer.GetData(drawArgsData);
+            Debug.Log(
+                $"Draw args: [{drawArgsData[0]}, {drawArgsData[1]}, {drawArgsData[2]}, {drawArgsData[3]}, {drawArgsData[4]}]");
 
-            int prepareDrawArgsKernel = parent.indirectArgsShader.FindKernel("PrepareDrawArgs");
-            parent.indirectArgsShader.SetBuffer(prepareDrawArgsKernel, "DrawArgsBuffer", DrawArgsBuffer);
-            parent.indirectArgsShader.SetBuffer(prepareDrawArgsKernel, "VertexCountBuffer", vertexCountBuffer);
+            // DEBUG: Sample a few triangles if any exist
+            if (triangleCountData[0] > 0)
+            {
+                // Create a temp buffer to read triangle data (only read first few triangles)
+                int trianglesToRead = Mathf.Min(3, triangleCountData[0]);
+                var tempTriangleData = new float[trianglesToRead * 30]; // 30 floats per triangle
 
-            parent.indirectArgsShader.Dispatch(prepareDrawArgsKernel, 1, 1, 1);
+                // This is a bit hacky since we can't directly read from AppendStructuredBuffer
+                // But we can try to read the underlying data
+                try
+                {
+                    // Note: This might not work directly with AppendStructuredBuffer
+                    // TriangleBuffer.GetData(tempTriangleData, 0, 0, trianglesToRead * 30);
+                    Debug.Log($"First triangle position data would be here (can't easily read from AppendBuffer)");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.Log($"Couldn't read triangle data: {e.Message}");
+                }
+            }
+
+            Debug.Log($"=== END DEBUG ===\n");
         }
 
         void DisposeBuffers()
         {
-            segmentBuffer?.Release();
-            segmentColorBuffer?.Release();
-            VertexBuffer?.Release();
-            VertexColorBuffer?.Release();
-            segmentCountBuffer?.Release();
-            indirectArgsBuffer?.Release();
-            vertexCountBuffer?.Release();
+            ContourVerticesBuffer?.Release();
             DrawArgsBuffer?.Release();
         }
 
@@ -275,6 +305,7 @@ public class PlanetGen : MonoBehaviour
             DisposeBuffers();
         }
     }
+
 
     private class RenderPipeline
     {
@@ -290,14 +321,28 @@ public class PlanetGen : MonoBehaviour
         {
             if (drawArgsBuffer == null) return;
 
-
-            // // for sanity checks
-            // int[] actualVertexCount = new int[4];
-            // drawArgsBuffer.GetData(actualVertexCount);
-            // print(actualVertexCount[0]);
-
             Graphics.DrawProceduralIndirect(parent.material, bounds, MeshTopology.Triangles,
-                parent.computePipeline.DrawArgsBuffer);
+                drawArgsBuffer, 0);
         }
+    }
+
+    public Texture2D CreateSolidColorTexture(Color color)
+    {
+        Texture2D texture = new Texture2D(fieldWidth, fieldWidth, TextureFormat.RGBAFloat, false);
+
+
+        Color32 color32 = color;
+        Color32[] pixels = new Color32[fieldWidth * fieldWidth];
+
+
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            pixels[i] = color32;
+        }
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+
+        return texture;
     }
 }

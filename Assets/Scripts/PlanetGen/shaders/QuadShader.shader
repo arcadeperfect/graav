@@ -1,95 +1,94 @@
-//Shader "Custom/QuadShader"
-//{
-//    SubShader
-//    {
-//        Tags { "RenderType"="Opaque" }
-//        
-//        Pass
-//        {
-//            CGPROGRAM
-//            #pragma vertex vert
-//            #pragma fragment frag
-//            #pragma target 4.5
-//            
-//            #include "UnityCG.cginc"
-//            
-//            StructuredBuffer<float3> VertexBuffer;
-//            StructuredBuffer<float4> VertexColorBuffer;
-//            
-//            struct v2f
-//            {
-//                float4 pos : SV_POSITION;
-//                float4 color : COLOR;
-//            };
-//            
-//            v2f vert(uint vertexID : SV_VertexID)
-//            {
-//                v2f o;
-//                o.pos = UnityObjectToClipPos(float4(VertexBuffer[vertexID], 1.0));
-//                o.color = VertexColorBuffer[vertexID];
-//                return o;
-//            }
-//            
-//            float4 frag(v2f i) : SV_Target
-//            {
-//                // return float4(1.0,0.0,0.0,1.0);
-//                return i.color;
-//            }
-//            ENDCG
-//        }
-//    }
-//}
-
-Shader "Universal Render Pipeline/Custom/QuadShader"
+Shader "Universal Render Pipeline/Custom/Procedural Contour Shader (Unlit)"
 {
-    Properties
-    {
-        // Add properties here if needed
-    }
-    
+    Properties { }
+
     SubShader
     {
-        Tags 
-        { 
-            "RenderType" = "Opaque" 
+        Tags
+        {
+            "RenderType" = "Opaque"
             "RenderPipeline" = "UniversalPipeline"
         }
-        
+
         Pass
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
-            
+
+            ZWrite On
+            Cull Off
+
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 4.5
-            
+
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            
-            StructuredBuffer<float3> VertexBuffer;
-            StructuredBuffer<float4> VertexColorBuffer;
-            
+
+            // Match your compute shader structs EXACTLY
+            struct ContourVertex
+            {
+                float3 position;
+                float3 normal;
+                float4 color;
+            };
+
+            struct Triangle
+            {
+                ContourVertex v0;
+                ContourVertex v1;
+                ContourVertex v2;
+            };
+
+            // Buffer of triangles, not individual vertices
+            StructuredBuffer<Triangle> TriangleBuffer;
+
             struct Attributes
             {
                 uint vertexID : SV_VertexID;
             };
-            
+
             struct Varyings
             {
-                float4 positionHCS : SV_POSITION;
-                float4 color : COLOR;
+                float4 positionHCS  : SV_POSITION;
+                float4 color        : COLOR;
+                float3 normalWS     : TEXCOORD0; 
             };
-            
+
             Varyings vert(Attributes input)
             {
                 Varyings output;
-                float3 positionOS = VertexBuffer[input.vertexID];
-                output.positionHCS = TransformObjectToHClip(positionOS);
-                output.color = VertexColorBuffer[input.vertexID];
+
+                // Calculate which triangle and which vertex within that triangle
+                uint triangleIndex = input.vertexID / 3;
+                uint vertexInTriangle = input.vertexID % 3;
+
+                // Get the triangle
+                Triangle tri = TriangleBuffer[triangleIndex];
+                
+                // Get the specific vertex from the triangle
+                ContourVertex vertexData;
+                if (vertexInTriangle == 0)
+                    vertexData = tri.v0;
+                else if (vertexInTriangle == 1)
+                    vertexData = tri.v1;
+                else
+                    vertexData = tri.v2;
+
+                // Transform and output
+                float3 positionOS = vertexData.position;
+                float3 normalOS = vertexData.normal;
+
+                VertexPositionInputs positionInputs = GetVertexPositionInputs(positionOS);
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(normalOS);
+
+                output.positionHCS = positionInputs.positionCS;
+                output.normalWS = normalInputs.normalWS;
+                output.color = vertexData.color;
+
                 return output;
             }
-            
+
             half4 frag(Varyings input) : SV_Target
             {
                 return input.color;
