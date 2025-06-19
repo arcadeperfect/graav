@@ -1,5 +1,3 @@
-
-
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -11,10 +9,14 @@ namespace PlanetGen2
         [Range(0, 0.5f)] public float radius = 0.5f;
         [Range(0, 2f)] public float amplitude = 0.5f;
         [Range(0, 10f)] public float frequency = 0.5f;
-        public float iso = 0.5f;
-        [Range(0, 1f)] public float lineWidth;
         [Range(0, 5)] public int blur;
 
+        [Header("Compute Shaders")] public float iso = 0.5f;
+
+        [Header("SDF")] public int textureRes = 1024;
+        [Range(0, 1f)] public float lineWidth;
+        public float bandSpacing = 0.05f; // Distance between band centers
+        public float maxDistance = 0.2f; // How far from contour to show bands
         [Header("Debug")] public bool enableDebugDraw = false;
         public Color debugLineColor = Color.red;
         public float debugLineDuration = 0.1f;
@@ -23,9 +25,8 @@ namespace PlanetGen2
         public ComputeShader MarchingSqaresShader;
         public ComputeShader SdfGeneratorShader;
 
-        
 
-        private global::PlanetGen.FieldGen fieldGen;
+        private FieldGen fieldGen;
 
         private ComputePipeline computePipeline;
 
@@ -33,17 +34,19 @@ namespace PlanetGen2
         public Renderer fieldRenderer;
         public Renderer resultRenderer;
 
-        private global::PlanetGen.FieldGen.TextureRegistry textures;
+        // private global::PlanetGen.FieldGen.TextureRegistry field_textures;
+        private FieldGen.TextureRegistry field_textures;
 
         private struct CachedFieldParams
         {
-            public int FieldWidth, Blur;
+            public int FieldWidth, Blur, TextureRes;
             public float Radius, Amplitude, Frequency;
 
             public bool HasChanged(PlanetGenMain2 genMain2)
             {
                 return FieldWidth != genMain2.fieldWidth
                        || Blur != genMain2.blur
+                       || TextureRes != genMain2.textureRes
                        || !Mathf.Approximately(Radius, genMain2.radius) ||
                        !Mathf.Approximately(Amplitude, genMain2.amplitude) ||
                        !Mathf.Approximately(Frequency, genMain2.frequency);
@@ -53,12 +56,14 @@ namespace PlanetGen2
         private struct CachedComputeParams
         {
             public float Iso, LineWidth;
+            public int TextureRes;
 
             public bool HasChanged(PlanetGenMain2 genMain2)
             {
                 return
                     !Mathf.Approximately(Iso, genMain2.iso) ||
-                    !Mathf.Approximately(LineWidth, genMain2.lineWidth);
+                    !Mathf.Approximately(LineWidth, genMain2.lineWidth) ||
+                    TextureRes != genMain2.textureRes;
             }
         }
 
@@ -74,10 +79,10 @@ namespace PlanetGen2
 
         void Init()
         {
-            textures = new global::PlanetGen.FieldGen.TextureRegistry(fieldWidth);
-            fieldGen = new global::PlanetGen.FieldGen();
+            field_textures = new FieldGen.TextureRegistry(fieldWidth);
+            fieldGen = new FieldGen();
             computePipeline = new ComputePipeline(this);
-            computePipeline.InitBuffers(fieldWidth);
+            computePipeline.InitBuffers(fieldWidth, textureRes);
         }
 
         void RegenField()
@@ -85,34 +90,37 @@ namespace PlanetGen2
             if (cachedFieldParams.HasChanged(this))
             {
                 // print("regen field");
-                fieldGen.GetTex(ref textures, 0, radius, amplitude, frequency, fieldWidth, blur);
-                computePipeline.InitBuffers(fieldWidth);
-                fieldRenderer.material.SetTexture("_FieldTex", textures.fields);
-                fieldRenderer.material.SetTexture("_ColorTex", textures.colors);
+                fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, fieldWidth, blur);
+                computePipeline.InitBuffers(fieldWidth, textureRes);
+                fieldRenderer.material.SetTexture("_FieldTex", field_textures.fields);
+                fieldRenderer.material.SetTexture("_ColorTex", field_textures.colors);
                 UpdateCachedParams();
             }
 
             RegenCompute();
         }
 
+
         void RegenCompute()
         {
-            computePipeline.Dispatch(textures, iso, lineWidth);
+            computePipeline.Dispatch(field_textures, iso, lineWidth);
 
             // debug tex
             sdfRenderer.material.SetTexture("_MainTex", computePipeline.SdfTexture);
-            
+
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
+            resultRenderer.material.SetTexture("_ColorTexture", field_textures.colors); // Add this line
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
-            // resultRenderer.material.SetBuffer("_SegmentColors", computePipeline.SegmentColorsBuffer);
-            // resultRenderer.material.SetFloat("_LineWidth", lineWidth);
+            resultRenderer.material.SetFloat("_ShowBands", 1.0f);
+            resultRenderer.material.SetFloat("_BandSpacing", bandSpacing);  // Distance between band centers
+            resultRenderer.material.SetFloat("_MaxDistance", maxDistance);   // How far from contour to show bands
         }
 
         public void Update()
         {
             if (cachedFieldParams.HasChanged(this))
             {
-                computePipeline.InitBuffers(fieldWidth);
+                computePipeline.InitBuffers(fieldWidth, textureRes);
                 RegenField();
             }
             else if (cachedComputeParams.HasChanged(this))
@@ -128,7 +136,6 @@ namespace PlanetGen2
             UpdateCachedParams();
         }
 
-        
 
         public void OnDestroy()
         {
@@ -144,7 +151,7 @@ namespace PlanetGen2
                 Radius = this.radius,
                 Amplitude = this.amplitude,
                 Frequency = this.frequency,
-                Blur = this.blur
+                Blur = this.blur, TextureRes = this.textureRes
             };
 
             cachedComputeParams = new CachedComputeParams()
@@ -185,7 +192,7 @@ namespace PlanetGen2
             /// Initializes or re-initializes all compute buffers.
             /// Called when the field width changes or at the start.
             /// </summary>
-            public void InitBuffers(int newFieldWidth)
+            public void InitBuffers(int newFieldWidth, int newTextureRes)
             {
                 DisposeBuffers();
 
@@ -205,7 +212,7 @@ namespace PlanetGen2
                 // NEW: Initialize the SDF RenderTexture
                 // Format is ARGBFloat to hold distance, index, and interp factor.
                 if (SdfTexture != null) SdfTexture.Release();
-                SdfTexture = new RenderTexture(newFieldWidth, newFieldWidth, 0, RenderTextureFormat.ARGBFloat);
+                SdfTexture = new RenderTexture(newTextureRes, newTextureRes, 0, RenderTextureFormat.ARGBFloat);
                 SdfTexture.enableRandomWrite = true; // IMPORTANT
                 SdfTexture.Create();
             }
@@ -213,7 +220,7 @@ namespace PlanetGen2
             /// <summary>
             /// Sets shader parameters and executes the Marching Squares compute shader.
             /// </summary>
-            public void Dispatch(global::PlanetGen.FieldGen.TextureRegistry textures, float iso, float lineWidth)
+            public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
             {
                 if (SegmentsBuffer == null) return;
 
@@ -224,7 +231,6 @@ namespace PlanetGen2
                 var msShader = parent.MarchingSqaresShader;
                 msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
                 msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
-                // ... (rest of your MS parameter setting is correct) ...
                 msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", textures.fields);
                 msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.colors);
                 msShader.SetFloat("IsoValue", iso);
@@ -238,19 +244,19 @@ namespace PlanetGen2
                 ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
 
                 // --- PASS 2: SDF GENERATION ---
-                var sdfShader = parent.SdfGeneratorShader;
-                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
-                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
-                sdfShader.SetInt("_TextureResolution", parent.fieldWidth);
+                var sdfGeneratorShader = parent.SdfGeneratorShader;
+                sdfGeneratorShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                sdfGeneratorShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                sdfGeneratorShader.SetInt("_FieldResolution", parent.fieldWidth);
+                sdfGeneratorShader.SetInt("_TextureResolution", parent.textureRes);
+                
                 // Pass the segment count to the SDF shader.
-                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
-                
-                
-                sdfShader.Dispatch(_sdfKernel, threadGroups, threadGroups, 1);
+                sdfGeneratorShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
 
+
+                int sdfThreadGroups = Mathf.CeilToInt(parent.textureRes / 8.0f);
+                sdfGeneratorShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
                 parent.sdfRenderer.material.mainTexture = SdfTexture;
-                
-
             }
 
             void DisposeBuffers()
@@ -268,7 +274,9 @@ namespace PlanetGen2
                 DisposeBuffers();
             }
         }
+
         #region Debug
+
         /// <summary>
         /// Debug draws the marching squares segments as lines in the scene view
         /// </summary>
@@ -320,6 +328,7 @@ namespace PlanetGen2
 
             Debug.Log($"Drew {actualSegmentCount} marching squares segments");
         }
+
         #endregion
     }
 }

@@ -9,6 +9,7 @@ RWTexture2D<float4> _SDFTexture;
 
 // Configuration
 uint _TextureResolution;
+uint _FieldResolution; // The resolution of the field, used to scale the coordinates
 StructuredBuffer<int> _SegmentCount; // Number of segments, used to avoid hardcoding
 
 // Helper function to compute the shortest distance from a point 'p'
@@ -36,7 +37,11 @@ void GenerateSDF (uint3 id : SV_DispatchThreadID)
 
     // Determine the world position for this pixel/thread in the [-1, 1] range.
     // This must match the coordinate space used in your Marching Squares shader.
-    float2 worldPos = (float2(id.xy) / _TextureResolution) * 2.0f - 1.0f;
+
+    // float2 worldPos = (float2(id.xy) / _TextureResolution) * (_FieldResolution / _TextureResolution) * 2.0f - 1.0f;
+    float2 normalizedPos = float2(id.xy) / _TextureResolution; // [0,1] range
+    float2 worldPos = normalizedPos * 2.0f - 1.0f; // [-1,1] range, same as segments
+
 
     // Initialize tracking variables.
     float minDistance = 1e9; // A large number, effectively infinity.

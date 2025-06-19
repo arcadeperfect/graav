@@ -1,10 +1,13 @@
-﻿Shader "PlanetGen/SDFViz"
+﻿Shader "Universal Render Pipeline/Unlit/SDFSanityCheck"
 {
     Properties
     {
         _SDFTexture ("SDF Texture", 2D) = "white" {}
+        _ColorTexture ("Color Texture", 2D) = "white" {}
         _LineWidth ("Line Width", Float) = 0.02
         _LineColor ("Line Color", Color) = (1, 1, 1, 1)
+        _ColorTextureRes ("Color Texture Resolution", Float) = 512
+        _SDFTextureRes ("SDF Texture Resolution", Float) = 1024
     }
     
     SubShader
@@ -46,13 +49,17 @@
             TEXTURE2D(_SDFTexture);
             SAMPLER(sampler_SDFTexture);
             
-            // Add the structured buffer here, outside CBUFFER
-            StructuredBuffer<float4> _SegmentColors;
+            // Add the color texture
+            TEXTURE2D(_ColorTexture);
+            SAMPLER(sampler_ColorTexture);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _SDFTexture_ST;
+                float4 _ColorTexture_ST;
                 float _LineWidth;
                 float4 _LineColor;
+                float _ColorTextureRes;
+                float _SDFTextureRes;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -70,8 +77,6 @@
                 
                 // Extract distance from red channel
                 float distance = sdfData.r;
-                int segmentIndex = (int)sdfData.g;
-                float interpFactor = sdfData.b;
                 
                 // Check if this is the fallback value (very large distance)
                 if (distance > 1000.0)
@@ -93,8 +98,10 @@
                     discard;
                 }
                 
-                // Sample segment color from buffer
-                half4 segmentColor = (half4)_SegmentColors[segmentIndex];
+                // Sample color from the color texture, scaling UV coordinates if resolutions differ
+                // Map from SDF texture space to color texture space
+                float2 colorUV = input.uv; // Start with SDF UV coordinates
+                half4 segmentColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_ColorTexture, colorUV);
                 
                 // Blend segment color with calculated alpha
                 return half4(segmentColor.rgb, alpha);

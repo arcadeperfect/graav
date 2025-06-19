@@ -65,7 +65,7 @@ namespace PlanetGen2
 
     public class FieldGen
     {
-        public struct TextureRegistry
+        public struct  TextureRegistry
         {
             public Texture2D fields;
             public Texture2D colors;
