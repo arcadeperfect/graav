@@ -92,27 +92,28 @@
                 
                 if (_ShowBands > 0.5)
                 {
-                    // Band rendering mode - bands with individual lineWidth thickness
-                    if (distance <= _MaxDistance)
+                    // Band rendering mode - bands only inside the shape (distance < _LineWidth threshold)
+                    if (distance <= _LineWidth)
                     {
+                        // We're inside the shape, now calculate bands
                         // Calculate distance to nearest band center
                         float bandPosition = distance / _BandSpacing;
                         float nearestBandCenter = round(bandPosition) * _BandSpacing;
                         float distanceToBandCenter = abs(distance - nearestBandCenter);
                         
                         // Show band if within lineWidth/2 of the band center
-                        if (distanceToBandCenter <= _LineWidth * 0.5)
+                        if (distanceToBandCenter <= _LineWidth * 0.25) // Make bands thinner for better visibility
                         {
                             return half4(segmentColor.rgb, 1.0); // Band color
                         }
                         else
                         {
-                            return half4(0, 0, 0, 1); // Black between bands
+                            return half4(0, 0, 0, 1); // Black between bands inside shape
                         }
                     }
                     else
                     {
-                        return half4(0, 0, 0, 1); // Black outside max distance
+                        return half4(0, 0, 0, 1); // Black outside the shape
                     }
                 }
                 else

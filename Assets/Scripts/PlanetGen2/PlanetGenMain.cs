@@ -113,7 +113,7 @@ namespace PlanetGen2
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
             resultRenderer.material.SetFloat("_ShowBands", 1.0f);
             resultRenderer.material.SetFloat("_BandSpacing", bandSpacing);  // Distance between band centers
-            resultRenderer.material.SetFloat("_MaxDistance", maxDistance);   // How far from contour to show bands
+            // resultRenderer.material.SetFloat("_MaxDistance", maxDistance);   // How far from contour to show bands
         }
 
         public void Update()
@@ -244,18 +244,26 @@ namespace PlanetGen2
                 ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
 
                 // --- PASS 2: SDF GENERATION ---
-                var sdfGeneratorShader = parent.SdfGeneratorShader;
-                sdfGeneratorShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
-                sdfGeneratorShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
-                sdfGeneratorShader.SetInt("_FieldResolution", parent.fieldWidth);
-                sdfGeneratorShader.SetInt("_TextureResolution", parent.textureRes);
+                // var sdfShader = parent.SdfGeneratorShader;
+                // sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                // sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                // sdfShader.SetInt("_FieldResolution", parent.fieldWidth);
+                // sdfShader.SetInt("_TextureResolution", parent.textureRes);
+                var sdfShader = parent.SdfGeneratorShader;
+                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                sdfShader.SetTexture(_sdfKernel, "_ScalarField", textures.fields); // Add this line
+                sdfShader.SetFloat("_IsoValue", iso); // Add this line
+                sdfShader.SetInt("_FieldResolution", parent.fieldWidth);
+                sdfShader.SetInt("_TextureResolution", parent.textureRes);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
                 
                 // Pass the segment count to the SDF shader.
-                sdfGeneratorShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
 
 
                 int sdfThreadGroups = Mathf.CeilToInt(parent.textureRes / 8.0f);
-                sdfGeneratorShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
+                sdfShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
                 parent.sdfRenderer.material.mainTexture = SdfTexture;
             }
 
