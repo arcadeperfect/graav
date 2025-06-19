@@ -4,12 +4,9 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace PlanetGen
+namespace PlanetGen2
 {
-    //
-// ERROR FIX: The Texture2DExtensions class is now a top-level static class.
-// It is no longer nested inside FieldGen.
-//
+   
     public static class Texture2DExtensions
     {
         public static void ApplyBlur(this Texture2D texture, int blurRadius)

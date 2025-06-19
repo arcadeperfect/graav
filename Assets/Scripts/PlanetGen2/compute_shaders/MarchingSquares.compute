@@ -1,0 +1,202 @@
+#pragma kernel MarchingSquares
+
+// A struct to hold the start and end colors of a line segment.
+struct SegmentColor
+{
+    float4 color1;
+    float4 color2;
+};
+
+// Input and configuration variables.
+float IsoValue;
+// Changed to uint to match the type of SV_DispatchThreadID and resolve compiler warnings.
+uint TextureWidth;
+uint TextureHeight;
+
+// Input textures.
+Texture2D<float4> ScalarFieldTexture;
+Texture2D<float4> ColorFieldTexture;
+
+// Output buffers that can be appended to from the shader.
+AppendStructuredBuffer<float4> SegmentsBuffer;
+AppendStructuredBuffer<SegmentColor> SegmentColorsBuffer;
+
+// Converts texture coordinates to normalized [-1, 1] space
+float2 TextureToNormalized(uint2 texCoord)
+{
+    // Convert to [0, 1] range first, then to [-1, 1]
+    float2 normalized = float2(texCoord) / float2(TextureWidth, TextureHeight);
+    return normalized * 2.0f - 1.0f;
+}
+
+// Linearly interpolates between two texture coordinates and returns normalized position
+float2 InterpolateEdgeNormalized(uint2 texCoord1, uint2 texCoord2, float v1, float v2, float iso)
+{
+    // Avoid division by zero if the values are very close.
+    if (abs(v1 - v2) < 0.00001f) 
+        return TextureToNormalized(texCoord1);
+    
+    float t = (iso - v1) / (v2 - v1);
+    
+    // Interpolate in texture space first
+    float2 interpTexCoord = lerp(float2(texCoord1), float2(texCoord2), t);
+    
+    // Then convert to normalized space
+    return (interpTexCoord / float2(TextureWidth, TextureHeight)) * 2.0f - 1.0f;
+}
+
+// Linearly interpolates between two colors based on the iso-surface intersection.
+float4 InterpolateColor(float4 c1, float4 c2, float v1, float v2, float iso)
+{
+    // Avoid division by zero if the values are very close.
+    if (abs(v1 - v2) < 0.00001f) return c1;
+    float t = (iso - v1) / (v2 - v1);
+    return lerp(c1, c2, t);
+}
+
+[numthreads(8,8,1)]
+void MarchingSquares(uint3 id : SV_DispatchThreadID)
+{
+    // Exit if the thread is out of the texture bounds.
+    if (id.x >= TextureWidth - 1 || id.y >= TextureHeight - 1)
+        return;
+
+    uint x = id.x;
+    uint y = id.y;
+
+    // Sample the scalar values at the four corners of the cell.
+    float v00 = ScalarFieldTexture[uint2(x, y)].r;       // bottom-left
+    float v10 = ScalarFieldTexture[uint2(x + 1, y)].r;   // bottom-right
+    float v11 = ScalarFieldTexture[uint2(x + 1, y + 1)].r;// top-right
+    float v01 = ScalarFieldTexture[uint2(x, y + 1)].r;   // top-left
+
+    // Sample the colors at the four corners of the cell.
+    float4 c00 = ColorFieldTexture[uint2(x, y)];
+    float4 c10 = ColorFieldTexture[uint2(x + 1, y)];
+    float4 c11 = ColorFieldTexture[uint2(x + 1, y + 1)];
+    float4 c01 = ColorFieldTexture[uint2(x, y + 1)];
+    
+    // Determine the case index based on which corners are inside the iso-surface.
+    int caseIndex = 0;
+    if (v00 > IsoValue) caseIndex |= 1; // bottom-left
+    if (v10 > IsoValue) caseIndex |= 2; // bottom-right
+    if (v11 > IsoValue) caseIndex |= 4; // top-right
+    if (v01 > IsoValue) caseIndex |= 8; // top-left
+
+    // If all corners are inside or all are outside, there is no line segment.
+    if (caseIndex == 0 || caseIndex == 15)
+        return;
+
+    // Calculate the interpolated vertex positions on each of the four cell edges.
+    // Using the new normalized interpolation function
+    float2 edge0 = InterpolateEdgeNormalized(uint2(x, y), uint2(x + 1, y), v00, v10, IsoValue); // bottom
+    float2 edge1 = InterpolateEdgeNormalized(uint2(x + 1, y), uint2(x + 1, y + 1), v10, v11, IsoValue); // right
+    float2 edge2 = InterpolateEdgeNormalized(uint2(x, y + 1), uint2(x + 1, y + 1), v01, v11, IsoValue); // top
+    float2 edge3 = InterpolateEdgeNormalized(uint2(x, y), uint2(x, y + 1), v00, v01, IsoValue); // left
+
+    // Calculate the interpolated colors at each of the new vertices.
+    float4 color0 = InterpolateColor(c00, c10, v00, v10, IsoValue); // bottom
+    float4 color1 = InterpolateColor(c10, c11, v10, v11, IsoValue); // right
+    float4 color2 = InterpolateColor(c01, c11, v01, v11, IsoValue); // top
+    float4 color3 = InterpolateColor(c00, c01, v00, v01, IsoValue); // left
+    
+    // Use the case index to determine which line segments to generate and append them to the buffers.
+    // Each segment's position and color data is appended in the same order to maintain correspondence.
+    switch (caseIndex)
+    {
+    case 1:
+    case 14: // Inverted case of 1
+        {
+            SegmentsBuffer.Append(float4(edge3, edge0));
+            SegmentColor segColor;
+            segColor.color1 = color3;
+            segColor.color2 = color0;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 2:
+    case 13: // Inverted case of 2
+        {
+            SegmentsBuffer.Append(float4(edge0, edge1));
+            SegmentColor segColor;
+            segColor.color1 = color0;
+            segColor.color2 = color1;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 3:
+    case 12: // Inverted case of 3
+        {
+            SegmentsBuffer.Append(float4(edge3, edge1));
+            SegmentColor segColor;
+            segColor.color1 = color3;
+            segColor.color2 = color1;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 4:
+    case 11: // Inverted case of 4
+        {
+            SegmentsBuffer.Append(float4(edge1, edge2));
+            SegmentColor segColor;
+            segColor.color1 = color1;
+            segColor.color2 = color2;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 5: // Saddle point
+        {
+            // First segment
+            SegmentsBuffer.Append(float4(edge3, edge0));
+            SegmentColor segColorA;
+            segColorA.color1 = color3;
+            segColorA.color2 = color0;
+            SegmentColorsBuffer.Append(segColorA);
+            
+            // Second segment
+            SegmentsBuffer.Append(float4(edge1, edge2));
+            SegmentColor segColorB;
+            segColorB.color1 = color1;
+            segColorB.color2 = color2;
+            SegmentColorsBuffer.Append(segColorB);
+            break;
+        }
+    case 6:
+    case 9: // Inverted case of 6
+        {
+            SegmentsBuffer.Append(float4(edge0, edge2));
+            SegmentColor segColor;
+            segColor.color1 = color0;
+            segColor.color2 = color2;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 7:
+    case 8: // Inverted case of 7
+        {
+            SegmentsBuffer.Append(float4(edge2, edge3));
+            SegmentColor segColor;
+            segColor.color1 = color2;
+            segColor.color2 = color3;
+            SegmentColorsBuffer.Append(segColor);
+            break;
+        }
+    case 10: // Saddle point
+        {
+            // First segment
+            SegmentsBuffer.Append(float4(edge0, edge1));
+            SegmentColor segColorA;
+            segColorA.color1 = color0;
+            segColorA.color2 = color1;
+            SegmentColorsBuffer.Append(segColorA);
+
+            // Second segment
+            SegmentsBuffer.Append(float4(edge2, edge3));
+            SegmentColor segColorB;
+            segColorB.color1 = color2;
+            segColorB.color2 = color3;
+            SegmentColorsBuffer.Append(segColorB);
+            break;
+        }
+    }
+}

@@ -1,0 +1,97 @@
+﻿// #pragma kernel PrepareQuadGenArgs
+//
+// RWStructuredBuffer<int> SegmentCountBuffer;
+// RWStructuredBuffer<uint> IndirectArgsBuffer;
+//
+// int ThreadGroupSize;
+//
+// [numthreads(1, 1, 1)]
+// void PrepareQuadGenArgs(uint id: SV_DispatchThreadID)
+// {
+//     // get number of segments generated
+//     int segmentCount = SegmentCountBuffer[0];
+//
+//     // calculate thread groups needed
+//     int numThreadGroups = (segmentCount + ThreadGroupSize - 1) / ThreadGroupSize;
+//
+//     // set arguments
+//     IndirectArgsBuffer[0] = numThreadGroups;
+//     IndirectArgsBuffer[1] = 1;
+//     IndirectArgsBuffer[2] = 1;
+// }
+//
+// #pragma kernel PrepareDrawArgs
+//
+// RWStructuredBuffer<int> VertexCountBuffer;
+// RWStructuredBuffer<int> DrawArgsBuffer;
+//
+// [numthreads(1,1,1)]
+// void PrepareDrawArgs(uint3 id : SV_DispatchThreadID)
+// {
+//     int vertexCount = VertexCountBuffer[0];
+//     DrawArgsBuffer[0] = vertexCount;    // vertex count per instance
+//     DrawArgsBuffer[1] = 1;              // instace count
+//     DrawArgsBuffer[2] = 0;              // start vertex location
+//     DrawArgsBuffer[3] = 0;              // start instance location
+// }
+
+#pragma kernel PrepareQuadGenArgs
+#pragma kernel PrepareDrawArgs
+#pragma kernel ConvertTriangleCountToVertexCount
+
+RWStructuredBuffer<int> SegmentCountBuffer;
+RWStructuredBuffer<uint> IndirectArgsBuffer;
+RWStructuredBuffer<int> VertexCountBuffer;
+RWStructuredBuffer<int> DrawArgsBuffer;
+RWStructuredBuffer<int> TriangleCountBuffer; // Add this for the new kernel
+
+int ThreadGroupSize;
+
+[numthreads(1, 1, 1)]
+void PrepareQuadGenArgs(uint id: SV_DispatchThreadID)
+{
+    // get number of segments generated
+    int segmentCount = SegmentCountBuffer[0];
+
+    // calculate thread groups needed
+    int numThreadGroups = (segmentCount + ThreadGroupSize - 1) / ThreadGroupSize;
+
+    // set arguments
+    IndirectArgsBuffer[0] = numThreadGroups;
+    IndirectArgsBuffer[1] = 1;
+    IndirectArgsBuffer[2] = 1;
+}
+
+[numthreads(1,1,1)]
+void PrepareDrawArgs(uint3 id : SV_DispatchThreadID)
+{
+    int vertexCount = VertexCountBuffer[0];
+    DrawArgsBuffer[0] = vertexCount;    // vertex count per instance
+    DrawArgsBuffer[1] = 1;              // instance count
+    DrawArgsBuffer[2] = 0;              // start vertex location
+    DrawArgsBuffer[3] = 0;              // start instance location
+}
+
+// NEW KERNEL: Convert triangle count to vertex count
+[numthreads(1,1,1)]
+void ConvertTriangleCountToVertexCount(uint3 id : SV_DispatchThreadID)
+{
+    int triangleCount = TriangleCountBuffer[0];
+    VertexCountBuffer[0] = triangleCount * 3; // 3 vertices per triangle
+}
+
+#pragma kernel CopyVertexCountToDrawArgs
+
+// RWStructuredBuffer<int> VertexCountBuffer;
+// RWStructuredBuffer<int> DrawArgsBuffer;
+
+[numthreads(1,1,1)]
+void CopyVertexCountToDrawArgs(uint3 id : SV_DispatchThreadID)
+{
+    int vertexCount = VertexCountBuffer[0];
+    DrawArgsBuffer[0] = vertexCount;    // vertex count per instance
+    DrawArgsBuffer[1] = 1;              // instance count
+    DrawArgsBuffer[2] = 0;              // start vertex location
+    DrawArgsBuffer[3] = 0;              // start instance location
+    DrawArgsBuffer[4] = 0;              // start instance location (for indexed rendering)
+}
