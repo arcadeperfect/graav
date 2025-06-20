@@ -7,7 +7,7 @@ namespace PlanetGen2
     {
         [Header("Field")] public int fieldWidth = 512;
         [Range(0, 0.5f)] public float radius = 0.5f;
-        [Range(0, 2f)] public float amplitude = 0.5f;
+        [Range(0, 10f)] public float amplitude = 0.5f;
         [Range(0, 10f)] public float frequency = 0.5f;
         [Range(0, 5)] public int blur;
 
@@ -111,8 +111,8 @@ namespace PlanetGen2
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.colors); // Add this line
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
-            resultRenderer.material.SetFloat("_ShowBands", 1.0f);
-            resultRenderer.material.SetFloat("_BandSpacing", bandSpacing);  // Distance between band centers
+            // resultRenderer.material.SetFloat("_ShowBands", 1.0f);
+            // resultRenderer.material.SetFloat("_BandSpacing", bandSpacing * 0.1f);  // Distance between band centers
             // resultRenderer.material.SetFloat("_MaxDistance", maxDistance);   // How far from contour to show bands
         }
 

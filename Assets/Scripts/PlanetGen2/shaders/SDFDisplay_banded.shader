@@ -1,4 +1,4 @@
-﻿Shader "Universal Render Pipeline/Unlit/SDFSanityCheck"
+﻿Shader "Universal Render Pipeline/Unlit/SDFSanityCheck_banded"
 {
     Properties
     {
@@ -50,6 +50,7 @@
             TEXTURE2D(_SDFTexture);
             SAMPLER(sampler_SDFTexture);
             
+            // Add the color texture
             TEXTURE2D(_ColorTexture);
             SAMPLER(sampler_ColorTexture);
 
@@ -76,11 +77,11 @@
                 // Sample the SDF texture (RGBA format)
                 float4 sdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_SDFTexture, input.uv);
                 
-                // Extract SIGNED distance from red channel
-                float signedDistance = sdfData.r;
+                // Extract distance from red channel
+                float distance = sdfData.r;
                 
                 // Check if this is the fallback value (very large distance)
-                if (abs(signedDistance) > 1000.0)
+                if (distance > 1000.0)
                 {
                     // Show bright red for fallback/error values
                     return half4(1, 0, 0, 1);
@@ -91,19 +92,17 @@
                 
                 if (_ShowBands > 0.5)
                 {
-                    // Band rendering mode - bands only inside the shape (negative distance)
-                    if (signedDistance < 0) // Negative distance means inside the shape
+                    // Band rendering mode - bands only inside the shape (distance < _LineWidth threshold)
+                    if (distance <= _LineWidth)
                     {
-                        // Use absolute distance for band calculations
-                        float absDistance = abs(signedDistance);
-                        
+                        // We're inside the shape, now calculate bands
                         // Calculate distance to nearest band center
-                        float bandPosition = absDistance / _BandSpacing;
+                        float bandPosition = distance / _BandSpacing;
                         float nearestBandCenter = round(bandPosition) * _BandSpacing;
-                        float distanceToBandCenter = abs(absDistance - nearestBandCenter);
+                        float distanceToBandCenter = abs(distance - nearestBandCenter);
                         
                         // Show band if within lineWidth/2 of the band center
-                        if (distanceToBandCenter <= _LineWidth * 0.5)
+                        if (distanceToBandCenter <= _LineWidth * 0.25) // Make bands thinner for better visibility
                         {
                             return half4(segmentColor.rgb, 1.0); // Band color
                         }
@@ -119,10 +118,7 @@
                 }
                 else
                 {
-                    // Normal line rendering mode - render the contour line
-                    // Use absolute distance for line rendering (we want the boundary)
-                    float distance = abs(signedDistance);
-                    
+                    // Normal line rendering mode
                     // Anti-aliased line rendering using smoothstep
                     float lineCenter = _LineWidth * 0.5;
                     float aaWidth = fwidth(distance);
