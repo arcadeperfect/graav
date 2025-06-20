@@ -1,0 +1,51 @@
+﻿#include "Packages/jp.keijiro.noiseshader/Shader/SimplexNoise3D.hlsl"
+
+
+#pragma kernel Warp
+
+Texture2D<float4> _In;
+RWTexture2D<float4> _Out;
+float _WarpAmount;
+// float _Time;
+float _NoiseScale;
+
+// Unity's built-in noise function
+float noise(float3 p) {
+    return frac(sin(dot(p, float3(12.9898, 78.233, 45.164))) * 43758.5453);
+}
+
+// Simple fractal noise
+float fbm(float3 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 4; i++) {
+        value += amplitude * noise(p);
+        p *= 2.0;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+[numthreads(8, 8, 1)]
+void Warp(uint3 id: SV_DispatchThreadID)
+{
+   
+    float3 noiseCoord = float3(id.xy * _NoiseScale * 0.001, 1);
+
+    float offsetX = SimplexNoise(noiseCoord);
+    float offsetY = SimplexNoise(noiseCoord + float3(100.0, 100.0, 0.0));
+
+    // float offsetX = fbm(noiseCoord);
+    // float offsetY = fbm(noiseCoord + float3(100.0, 100.0, 0.0));
+    
+    float2 warpVector = float2(offsetX - 0.5, offsetY - 0.5) * _WarpAmount;
+    float2 warpedUV = id.xy + warpVector;
+    
+    // Add bounds checking
+    uint2 texSize;
+    _In.GetDimensions(texSize.x, texSize.y);
+    warpedUV = clamp(warpedUV, 0, texSize - 1);
+    
+    float4 inputColor = _In[warpedUV];
+    _Out[id.xy] = inputColor;
+}

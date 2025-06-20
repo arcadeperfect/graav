@@ -1,4 +1,4 @@
-﻿Shader "Universal Render Pipeline/Unlit/SDFSanityCheck"
+﻿Shader "PlanetGen/SDFDisplay"
 {
     Properties
     {

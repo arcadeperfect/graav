@@ -1,349 +1,411 @@
-// using UnityEngine;
-//
-// namespace PlanetGen
-// {
-//     public class PlanetGen : MonoBehaviour
-//     {
-//         [Header("Field")] public int fieldWidth = 512;
-//         [Range(0, 0.5f)] public float radius = 0.5f;
-//         [Range(0, 2f)] public float amplitude = 0.5f;
-//         [Range(0, 10f)] public float frequency = 0.5f;
-//         public float iso = 0.5f;
-//         [Range(0, 1f)] public float lineWidth;
-//         [Range(0, 5)] public int blur;
-//
-//
-//         public ComputeShader MarchingSqaresToQuadsShader;
-//         public ComputeShader PrepareArgsShader;
-//
-//         public Material material;
-//
-//
-//         // private int vertexCount;
-//
-//         private FieldGen fieldGen;
-//
-//         private ComputePipeline computePipeline;
-//         private RenderPipeline renderPipeline;
-//
-//         public new Renderer renderer;
-//
-//
-//         private FieldGen.TextureRegistry textures;
-//
-//         private struct CachedFieldParams
-//         {
-//             public int FieldWidth, Blur;
-//             public float Radius, Amplitude, Frequency;
-//
-//             public bool HasChanged(PlanetGen gen)
-//             {
-//                 return FieldWidth != gen.fieldWidth
-//                        || Blur != gen.blur
-//                        || !Mathf.Approximately(Radius, gen.radius) ||
-//                        !Mathf.Approximately(Amplitude, gen.amplitude) ||
-//                        !Mathf.Approximately(Frequency, gen.frequency);
-//             }
-//         }
-//
-//         private struct CachedComputeParams
-//         {
-//             public float Iso, LineWidth;
-//
-//             public bool HasChanged(PlanetGen gen)
-//             {
-//                 return
-//                     !Mathf.Approximately(Iso, gen.iso) ||
-//                     !Mathf.Approximately(LineWidth, gen.lineWidth);
-//             }
-//         }
-//
-//
-//         private CachedFieldParams cachedFieldParams;
-//         private CachedComputeParams cachedComputeParams;
-//
-//
-//         public void Start()
-//         {
-//             print("start");
-//             Init();
-//             // Regen(fieldWidth);
-//             RegenField();
-//         }
-//
-//         void Init()
-//         {
-//             textures = new FieldGen.TextureRegistry(fieldWidth);
-//             fieldGen = new FieldGen();
-//             computePipeline = new ComputePipeline(this);
-//             computePipeline.InitBuffers(fieldWidth);
-//             AssignMaterialBuffers();
-//             renderPipeline = new RenderPipeline(this);
-//         }
-//
-//         void RegenField()
-//         {
-//             if (cachedFieldParams.HasChanged(this))
-//             {
-//                 // print("regen field");
-//                 fieldGen.GetTex(ref textures, 0, radius, amplitude, frequency, fieldWidth, blur);
-//                 computePipeline.InitBuffers(fieldWidth);
-//                 AssignMaterialBuffers();
-//                 UpdateCachedParams();
-//             }
-//
-//             RegenCompute();
-//         }
-//
-//         void RegenCompute()
-//         {
-//             computePipeline.Dispatch(textures, iso, lineWidth);
-//             renderer.material.SetTexture("_FieldTex", textures.fields);
-//             renderer.material.SetTexture("_ColorTex", textures.colors);
-//         }
-//
-//
-//         public void Update()
-//         {
-//             if (cachedFieldParams.HasChanged(this))
-//             {
-//                 computePipeline.InitBuffers(fieldWidth);
-//                 AssignMaterialBuffers();
-//                 RegenField();
-//             }
-//             else if (cachedComputeParams.HasChanged(this))
-//             {
-//                 RegenCompute();
-//             }
-//
-//             if (renderPipeline != null)
-//             {
-//                 renderPipeline.Render(computePipeline.DrawArgsBuffer);
-//             }
-//
-//             UpdateCachedParams();
-//         }
-//
-//         private void AssignMaterialBuffers()
-//         {
-//             material.SetBuffer("TriangleBuffer", computePipeline.TriangleBuffer);
-//         }
-//
-//         public void OnDestroy()
-//         {
-//             computePipeline?.Dispose();
-//             // todo implement dispose on fieldGen
-//         }
-//
-//         void UpdateCachedParams()
-//         {
-//             cachedFieldParams = new CachedFieldParams
-//             {
-//                 FieldWidth = this.fieldWidth,
-//                 Radius = this.radius,
-//                 Amplitude = this.amplitude,
-//                 Frequency = this.frequency,
-//                 Blur = this.blur
-//             };
-//
-//             cachedComputeParams = new CachedComputeParams()
-//             {
-//                 Iso = this.iso,
-//                 LineWidth = this.lineWidth
-//             };
-//         }
-//
-//         private class ComputePipeline : System.IDisposable
-//         {
-//             private PlanetGen parent;
-//
-//
-//             public ComputeBuffer ContourVerticesBuffer { get; private set; }
-//             public ComputeBuffer TriangleBuffer { get; private set; }
-//             public ComputeBuffer TriangleCountBuffer { get; private set; }
-//             public ComputeBuffer DrawArgsBuffer { get; private set; }
-//             public ComputeBuffer VertexCountBuffer { get; private set; }
-//
-//             private int fieldWidth;
-//
-//             public ComputePipeline(PlanetGen parent)
-//             {
-//                 this.parent = parent;
-//             }
-//
-//             public void InitBuffers(int newFieldWidth)
-//             {
-//                 DisposeBuffers();
-//
-//                 this.fieldWidth = newFieldWidth;
-//                 int numCells = (newFieldWidth - 1) * (newFieldWidth - 1);
-//                 int maxVertices = numCells * 12;
-//                 ContourVerticesBuffer = new ComputeBuffer(maxVertices, 40, ComputeBufferType.Append);
-//                 TriangleBuffer = new ComputeBuffer(maxVertices, sizeof(float) * 30, ComputeBufferType.Append);
-//                 TriangleCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-//                 VertexCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-//                 DrawArgsBuffer = new ComputeBuffer(5, sizeof(int), ComputeBufferType.IndirectArguments);
-//                 DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0, 0 });
-//             }
-//
-//             // public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
-//             // {
-//             //     TriangleBuffer.SetCounterValue(0);
-//             //
-//             //     var marchingKernel = parent.MarchingSqaresToQuadsShader.FindKernel("MarchingSquaresContour");
-//             //
-//             //     parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ScalarFieldTexture", textures.fields);
-//             //     parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ColorFieldTexture", textures.colors);
-//             //     parent.MarchingSqaresToQuadsShader.SetFloat("IsoValue", iso);
-//             //     parent.MarchingSqaresToQuadsShader.SetInt("TextureWidth", fieldWidth);
-//             //     parent.MarchingSqaresToQuadsShader.SetInt("TextureHeight", fieldWidth);
-//             //     parent.MarchingSqaresToQuadsShader.SetFloat("LineWidth", lineWidth);
-//             //     parent.MarchingSqaresToQuadsShader.SetBuffer(marchingKernel, "TriangleBuffer", TriangleBuffer);
-//             //
-//             //     // 1. Generate triangles
-//             //     int threadGroups = Mathf.CeilToInt((fieldWidth - 1) / 8f);
-//             //     parent.MarchingSqaresToQuadsShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
-//             //
-//             //     // 2. Copy triangle count from TriangleBuffer to TriangleCountBuffer
-//             //     ComputeBuffer.CopyCount(TriangleBuffer, TriangleCountBuffer, 0);
-//             //
-//             //     // 3. Convert triangle count to vertex count
-//             //     var triangleMultKernel = parent.PrepareArgsShader.FindKernel("ConvertTriangleCountToVertexCount");
-//             //     parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "TriangleCountBuffer", TriangleCountBuffer);
-//             //     parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "VertexCountBuffer", VertexCountBuffer);
-//             //     parent.PrepareArgsShader.Dispatch(triangleMultKernel, 1, 1, 1);
-//             //
-//             //     // 4. Copy vertex count to draw args
-//             //     ComputeBuffer.CopyCount(VertexCountBuffer, DrawArgsBuffer, 0);
-//             // }
-//
-//             public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
-//             {
-//                 TriangleBuffer.SetCounterValue(0);
-//
-//                 var marchingKernel = parent.MarchingSqaresToQuadsShader.FindKernel("MarchingSquaresContour");
-//
-//                 parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ScalarFieldTexture", textures.fields);
-//                 parent.MarchingSqaresToQuadsShader.SetTexture(marchingKernel, "ColorFieldTexture", textures.colors);
-//                 parent.MarchingSqaresToQuadsShader.SetFloat("IsoValue", iso);
-//                 parent.MarchingSqaresToQuadsShader.SetInt("TextureWidth", fieldWidth);
-//                 parent.MarchingSqaresToQuadsShader.SetInt("TextureHeight", fieldWidth);
-//                 parent.MarchingSqaresToQuadsShader.SetFloat("LineWidth", lineWidth);
-//                 parent.MarchingSqaresToQuadsShader.SetBuffer(marchingKernel, "TriangleBuffer", TriangleBuffer);
-//
-//                 Debug.Log($"=== COMPUTE DISPATCH DEBUG ===");
-//                 Debug.Log($"Field size: {fieldWidth}x{fieldWidth}, Iso: {iso}, LineWidth: {lineWidth}");
-//
-//                 // 1. Generate triangles
-//                 int threadGroups = Mathf.CeilToInt((fieldWidth - 1) / 8f);
-//                 Debug.Log($"Dispatching {threadGroups}x{threadGroups} thread groups");
-//                 parent.MarchingSqaresToQuadsShader.Dispatch(marchingKernel, threadGroups, threadGroups, 1);
-//
-//                 // 2. Copy triangle count from TriangleBuffer to TriangleCountBuffer
-//                 ComputeBuffer.CopyCount(TriangleBuffer, TriangleCountBuffer, 0);
-//
-//                 // DEBUG: Read triangle count
-//                 int[] triangleCountData = new int[1];
-//                 TriangleCountBuffer.GetData(triangleCountData);
-//                 Debug.Log($"Triangles generated: {triangleCountData[0]}");
-//
-//                 // 3. Convert triangle count to vertex count
-//                 var triangleMultKernel = parent.PrepareArgsShader.FindKernel("ConvertTriangleCountToVertexCount");
-//                 parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "TriangleCountBuffer", TriangleCountBuffer);
-//                 parent.PrepareArgsShader.SetBuffer(triangleMultKernel, "VertexCountBuffer", VertexCountBuffer);
-//                 parent.PrepareArgsShader.Dispatch(triangleMultKernel, 1, 1, 1);
-//
-//                 // DEBUG: Read vertex count
-//                 int[] vertexCountData = new int[1];
-//                 VertexCountBuffer.GetData(vertexCountData);
-//                 Debug.Log($"Vertex count: {vertexCountData[0]}");
-//
-//                 // 4. Copy vertex count to draw args
-//                 var copyKernel = parent.PrepareArgsShader.FindKernel("CopyVertexCountToDrawArgs");
-//                 parent.PrepareArgsShader.SetBuffer(copyKernel, "VertexCountBuffer", VertexCountBuffer);
-//                 parent.PrepareArgsShader.SetBuffer(copyKernel, "DrawArgsBuffer", DrawArgsBuffer);
-//                 parent.PrepareArgsShader.Dispatch(copyKernel, 1, 1, 1);
-//
-//                 // DEBUG: Read draw args
-//                 int[] drawArgsData = new int[5];
-//                 DrawArgsBuffer.GetData(drawArgsData);
-//                 Debug.Log(
-//                     $"Draw args: [{drawArgsData[0]}, {drawArgsData[1]}, {drawArgsData[2]}, {drawArgsData[3]}, {drawArgsData[4]}]");
-//
-//                 // DEBUG: Sample a few triangles if any exist
-//                 if (triangleCountData[0] > 0)
-//                 {
-//                     // Create a temp buffer to read triangle data (only read first few triangles)
-//                     int trianglesToRead = Mathf.Min(3, triangleCountData[0]);
-//                     var tempTriangleData = new float[trianglesToRead * 30]; // 30 floats per triangle
-//
-//                     // This is a bit hacky since we can't directly read from AppendStructuredBuffer
-//                     // But we can try to read the underlying data
-//                     try
-//                     {
-//                         // Note: This might not work directly with AppendStructuredBuffer
-//                         // TriangleBuffer.GetData(tempTriangleData, 0, 0, trianglesToRead * 30);
-//                         Debug.Log($"First triangle position data would be here (can't easily read from AppendBuffer)");
-//                     }
-//                     catch (System.Exception e)
-//                     {
-//                         Debug.Log($"Couldn't read triangle data: {e.Message}");
-//                     }
-//                 }
-//
-//                 Debug.Log($"=== END DEBUG ===\n");
-//             }
-//
-//             void DisposeBuffers()
-//             {
-//                 ContourVerticesBuffer?.Release();
-//                 DrawArgsBuffer?.Release();
-//             }
-//
-//             public void Dispose()
-//             {
-//                 DisposeBuffers();
-//             }
-//         }
-//
-//
-//         private class RenderPipeline
-//         {
-//             private PlanetGen parent;
-//             private Bounds bounds = new Bounds(Vector3.zero, Vector3.one * 50f);
-//
-//             public RenderPipeline(PlanetGen parent)
-//             {
-//                 this.parent = parent;
-//             }
-//
-//             public void Render(ComputeBuffer drawArgsBuffer)
-//             {
-//                 if (drawArgsBuffer == null) return;
-//
-//                 Graphics.DrawProceduralIndirect(parent.material, bounds, MeshTopology.Triangles,
-//                     drawArgsBuffer, 0);
-//             }
-//         }
-//
-//         public Texture2D CreateSolidColorTexture(Color color)
-//         {
-//             Texture2D texture = new Texture2D(fieldWidth, fieldWidth, TextureFormat.RGBAFloat, false);
-//
-//
-//             Color32 color32 = color;
-//             Color32[] pixels = new Color32[fieldWidth * fieldWidth];
-//
-//
-//             for (int i = 0; i < pixels.Length; i++)
-//             {
-//                 pixels[i] = color32;
-//             }
-//
-//             texture.SetPixels32(pixels);
-//             texture.Apply();
-//
-//             return texture;
-//         }
-//     }
-// }
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace PlanetGen
+{
+    public class PlanetGenMain2 : MonoBehaviour
+    {
+        [Header("Field")] public int fieldWidth = 512;
+        [Range(0, 0.5f)] public float radius = 0.5f;
+        [Range(0, 10f)] public float amplitude = 0.5f;
+        [Range(0, 10f)] public float frequency = 0.5f;
+        [Range(0, 5)] public int blur;
+
+        [Header("Compute Shaders")] public float iso = 0.5f;
+
+        [Header("SDF")] public int textureRes = 1024;
+        [Range(0, 1f)] public float lineWidth;
+        public float bandSpacing = 0.05f; // Distance between band centers
+        public float maxDistance = 0.2f; // How far from contour to show bands
+        public float domainWarp = 0f;
+        public float domainWarpScale;
+        
+        
+        [Header("Debug")] public bool enableDebugDraw = false;
+        public Color debugLineColor = Color.red;
+        public float debugLineDuration = 0.1f;
+        public int maxDebugSegments = 1000; // Limit to avoid performance issues
+
+        // public ComputeShader MarchingSqaresShader;
+        // public ComputeShader SdfGeneratorShader;
+
+
+        private FieldGen fieldGen;
+
+        private ComputePipeline computePipeline;
+        private ComputePingPong computePingPong;
+
+        public Renderer sdfRenderer;
+        public Renderer fieldRenderer;
+        public Renderer resultRenderer;
+
+        // private global::PlanetGen.FieldGen.TextureRegistry field_textures;
+        private FieldGen.TextureRegistry field_textures;
+
+        private struct CachedFieldParams
+        {
+            public int FieldWidth, Blur, TextureRes;
+            public float Radius, Amplitude, Frequency;
+
+            public bool HasChanged(PlanetGenMain2 genMain2)
+            {
+                return FieldWidth != genMain2.fieldWidth
+                       || Blur != genMain2.blur
+                       || TextureRes != genMain2.textureRes
+                       || !Mathf.Approximately(Radius, genMain2.radius) ||
+                       !Mathf.Approximately(Amplitude, genMain2.amplitude) ||
+                       !Mathf.Approximately(Frequency, genMain2.frequency);
+            }
+        }
+
+        private struct CachedComputeParams
+        {
+            public float Iso, LineWidth;
+            public int TextureRes;
+
+            public bool HasChanged(PlanetGenMain2 genMain2)
+            {
+                return
+                    !Mathf.Approximately(Iso, genMain2.iso) ||
+                    !Mathf.Approximately(LineWidth, genMain2.lineWidth) ||
+                    TextureRes != genMain2.textureRes;
+            }
+        }
+
+        private CachedFieldParams cachedFieldParams;
+        private CachedComputeParams cachedComputeParams;
+
+        public void Start()
+        {
+            print("start");
+            Init();
+            RegenField();
+        }
+
+        void Init()
+        {
+            field_textures = new FieldGen.TextureRegistry(fieldWidth);
+            fieldGen = new FieldGen();
+            computePipeline = new ComputePipeline(this);
+            computePipeline.InitBuffers(fieldWidth, textureRes);
+        }
+
+
+
+        void RegenField()
+        {
+            if (cachedFieldParams.HasChanged(this))
+            {
+                // print("regen field");
+                fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, fieldWidth, blur);
+                computePipeline.InitBuffers(fieldWidth, textureRes);
+                fieldRenderer.material.SetTexture("_FieldTex", field_textures.Fields);
+                fieldRenderer.material.SetTexture("_ColorTex", field_textures.Colors);
+                UpdateCachedParams();
+            }
+
+            RegenCompute();
+        }
+
+
+        void RegenCompute()
+        {
+            computePipeline.Dispatch(field_textures, iso, lineWidth);
+
+            
+            resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTextureWarped);
+            // resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
+            
+            resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors); // Add this line
+            resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
+            resultRenderer.material.SetFloat("_ShowBands", 1.0f);
+            resultRenderer.material.SetFloat("_BandSpacing", bandSpacing * 0.1f);  // Distance between band centers
+            resultRenderer.material.SetFloat("_MaxDistance", maxDistance);   // How far from contour to show bands
+        }
+
+        public void Update()
+        {
+            if (cachedFieldParams.HasChanged(this))
+            {
+                computePipeline.InitBuffers(fieldWidth, textureRes);
+                RegenField();
+            }
+            else if (cachedComputeParams.HasChanged(this))
+            {
+                RegenCompute();
+            }
+
+            if (enableDebugDraw)
+            {
+                DebugDrawMarchingSquaresBuffer();
+            }
+
+            UpdateCachedParams();
+        }
+
+
+        public void OnDestroy()
+        {
+            computePipeline?.Dispose();
+            computePingPong?.Dispose();
+            fieldGen?.Dispose();
+            // todo implement dispose on fieldGen
+        }
+
+        void UpdateCachedParams()
+        {
+            cachedFieldParams = new CachedFieldParams
+            {
+                FieldWidth = this.fieldWidth,
+                Radius = this.radius,
+                Amplitude = this.amplitude,
+                Frequency = this.frequency,
+                Blur = this.blur, TextureRes = this.textureRes
+            };
+
+            cachedComputeParams = new CachedComputeParams()
+            {
+                Iso = this.iso,
+                LineWidth = this.lineWidth
+            };
+        }
+
+        private class ComputePipeline : System.IDisposable
+        {
+            private PlanetGenMain2 parent;
+            private int _marchingSquaresKernel;
+            private int _sdfKernel; 
+            private int _sdfWarperKernel;
+
+            private ComputeShader MarchingSquaresShader;
+            private ComputeShader SdfGeneratorShader;
+            private ComputeShader SdfDomainWarpShader;
+
+            private ComputePingPong testPingPong;
+            
+            public ComputeBuffer SegmentsBuffer { get; private set; }
+
+            public ComputeBuffer
+                SegmentColorsBuffer { get; private set; } // Note the struct for this is 8 floats (32 bytes)
+
+            public ComputeBuffer SegmentCountBuffer { get; private set; } // To hold the segment count
+            public ComputeBuffer DrawArgsBuffer { get; private set; }
+            public RenderTexture SdfTexture { get; private set; }
+            public RenderTexture SdfTextureWarped { get; private set; }
+            public ComputePipeline(PlanetGenMain2 parent)
+            {
+                // string computeShaderLocatgion = "C"
+                
+                this.parent = parent;
+                MarchingSquaresShader = Resources.Load<ComputeShader>("Compute/MarchingSquares");
+                if (MarchingSquaresShader == null) Debug.LogWarning("shader is null");
+                
+                SdfGeneratorShader = Resources.Load<ComputeShader>("Compute/GenerateSDF");
+                if (SdfGeneratorShader == null) Debug.LogWarning("shader is null");
+
+                SdfDomainWarpShader = Resources.Load<ComputeShader>("Compute/DomainWarpSDF");
+                if (SdfGeneratorShader == null) Debug.LogWarning("shader is null");
+                
+                _marchingSquaresKernel = MarchingSquaresShader.FindKernel("MarchingSquares");
+                _sdfKernel = SdfGeneratorShader.FindKernel("GenerateSDF");
+                _sdfWarperKernel = SdfDomainWarpShader.FindKernel("Warp");
+
+
+            }
+
+            /// <summary>
+            /// Initializes or re-initializes all compute buffers.
+            /// Called when the field width changes or at the start.
+            /// </summary>
+            public void InitBuffers(int newFieldWidth, int newTextureRes)
+            {
+                DisposeBuffers();
+                
+
+
+                int maxSegments = newFieldWidth * newFieldWidth * 2;
+
+                SegmentsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Append);
+                SegmentColorsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Append);
+                SegmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+
+                DrawArgsBuffer = new ComputeBuffer(1, sizeof(int) * 4, ComputeBufferType.IndirectArguments);
+                DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0 });
+                
+                if (SdfTexture != null) SdfTexture.Release();
+                SdfTexture = new RenderTexture(newTextureRes, newTextureRes, 0, RenderTextureFormat.ARGBFloat);
+                SdfTexture.enableRandomWrite = true;
+                SdfTexture.Create();
+                
+                if(SdfTextureWarped != null) SdfTextureWarped.Release();
+                SdfTextureWarped = new RenderTexture(newTextureRes, newTextureRes, 0, RenderTextureFormat.ARGBFloat);
+                SdfTextureWarped.enableRandomWrite = true;
+                SdfTextureWarped.Create();
+
+            }
+
+            /// <summary>
+            /// Sets shader parameters and executes the Marching Squares compute shader.
+            /// </summary>
+            public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
+            {
+                if (SegmentsBuffer == null) return;
+
+                
+                ////////////////// testing ping pong
+                float warpAmount = 10f;
+                
+                testPingPong = new ComputePingPong();
+                testPingPong.AddTexture("field", RenderTextureFormat.ARGBFloat);
+                var floatParams = new Dictionary<string, float> { ["warp"] = warpAmount };
+                testPingPong.AddShader(
+                    Resources.Load<ComputeShader>("Compute/pingPong1/domainWarp"), 
+                    "Warp", 
+                    5,
+                    floatParams
+                );
+                
+                var startingSet = ComputePingPong.BufferSet.Create();
+                RenderTexture temp =
+                    new RenderTexture(parent.fieldWidth, parent.fieldWidth, 0, RenderTextureFormat.ARGBFloat);
+                Graphics.Blit(textures.Fields, temp);
+                startingSet.Textures["field"] = temp;
+                testPingPong.InitBuffers(parent.fieldWidth);
+                testPingPong.Execute(startingSet);
+                var results = testPingPong.Result;
+                foreach (var texture in testPingPong.Result.Textures)
+                {
+                    print(texture.Key);
+                    print(texture.Value);
+                    print(texture.Value.width);
+                }
+                ////////////////// testing ping pong
+                
+                
+
+                SegmentsBuffer.SetCounterValue(0);
+                SegmentColorsBuffer.SetCounterValue(0);
+
+                var msShader = MarchingSquaresShader;
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
+                msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", results.Textures["field"]);
+                // msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", textures.Fields);
+                msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
+                msShader.SetFloat("IsoValue", iso);
+                msShader.SetInt("TextureWidth", parent.fieldWidth);
+                msShader.SetInt("TextureHeight", parent.fieldWidth);
+
+                int threadGroups = Mathf.CeilToInt(parent.fieldWidth / 8.0f);
+                msShader.Dispatch(_marchingSquaresKernel, threadGroups, threadGroups, 1);
+
+
+                ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
+
+
+                var sdfShader = SdfGeneratorShader;
+                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                sdfShader.SetTexture(_sdfKernel, "_ScalarField", textures.Fields); // Add this line
+                sdfShader.SetFloat("_IsoValue", iso); // Add this line
+                sdfShader.SetInt("_FieldResolution", parent.fieldWidth);
+                sdfShader.SetInt("_TextureResolution", parent.textureRes);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
+
+                int sdfThreadGroups = Mathf.CeilToInt(parent.textureRes / 8.0f);
+                sdfShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
+                
+                var warpShader = SdfDomainWarpShader;
+                warpShader.SetTexture(_sdfWarperKernel, "_In", SdfTexture);
+                warpShader.SetTexture(_sdfWarperKernel, "_Out", SdfTextureWarped);
+                warpShader.SetFloat("_WarpAmount", parent.domainWarp);
+                warpShader.SetFloat("_NoiseScale", parent.domainWarpScale);
+
+                
+                warpShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
+
+                // parent.resultRenderer.material.mainTexture = SdfTexture;
+                // parent.sdfRenderer.material.mainTexture = SdfTextureWarped;
+            }
+
+            void DisposeBuffers()
+            {
+                SegmentsBuffer?.Dispose();
+                SegmentColorsBuffer?.Dispose();
+                DrawArgsBuffer?.Dispose();
+                SegmentCountBuffer?.Dispose();
+                // NEW: Dispose the texture
+                if (SdfTexture != null) SdfTexture.Release();
+            }
+
+            public void Dispose()
+            {
+                DisposeBuffers();
+                
+            }
+        }
+
+        #region Debug
+
+        /// <summary>
+        /// Debug draws the marching squares segments as lines in the scene view
+        /// </summary>
+        public void DebugDrawMarchingSquaresBuffer()
+        {
+            if (!enableDebugDraw || computePipeline?.SegmentsBuffer == null ||
+                computePipeline?.SegmentCountBuffer == null)
+                return;
+
+            // Get the actual number of segments generated
+            int[] segmentCount = new int[1];
+            computePipeline.SegmentCountBuffer.GetData(segmentCount);
+            int actualSegmentCount = Mathf.Min(segmentCount[0], maxDebugSegments);
+
+            if (actualSegmentCount <= 0)
+            {
+                Debug.Log("No segments to draw");
+                return;
+            }
+
+            // Each segment is 4 floats: start.x, start.y, end.x, end.y
+            Vector4[] segments = new Vector4[actualSegmentCount];
+            computePipeline.SegmentsBuffer.GetData(segments, 0, 0, actualSegmentCount);
+
+            // Convert from texture space [0,1] to world space and draw
+            for (int i = 0; i < actualSegmentCount; i++)
+            {
+                Vector4 segment = segments[i];
+
+                // Convert from normalized texture coordinates to world positions
+                // Assuming your field spans from -fieldWidth/2 to +fieldWidth/2 in world units
+                Vector3 start = new Vector3(
+                    (segment.x - 0.5f),
+                    (segment.y - 0.5f),
+                    0f
+                );
+
+                Vector3 end = new Vector3(
+                    (segment.z - 0.5f),
+                    (segment.w - 0.5f),
+                    0f
+                );
+
+                // Transform to world space relative to this object
+                start = transform.TransformPoint(start);
+                end = transform.TransformPoint(end);
+                Debug.DrawLine(start, end, debugLineColor, debugLineDuration);
+            }
+
+            Debug.Log($"Drew {actualSegmentCount} marching squares segments");
+        }
+
+        #endregion
+
+        // public void Dispose()
+        // {
+        //     computePingPong.Dispose();
+        // }
+    }
+}

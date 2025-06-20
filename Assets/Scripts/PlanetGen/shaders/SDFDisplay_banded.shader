@@ -1,4 +1,4 @@
-﻿Shader "Universal Render Pipeline/Unlit/SDFSanityCheck_banded"
+﻿Shader "PlanetGen/SDFDisplay_banded"
 {
     Properties
     {

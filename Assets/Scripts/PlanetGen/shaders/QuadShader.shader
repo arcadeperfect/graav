@@ -1,4 +1,4 @@
-Shader "Universal Render Pipeline/Custom/Procedural Contour Shader (Unlit)"
+Shader "PlanetGen/Procedural Contour Shader (Unlit)"
 {
     Properties { }
 

@@ -1,4 +1,4 @@
-﻿Shader "Universal Render Pipeline/Custom/UnlitMultiTex"
+﻿Shader "PlanetGen/UnlitMultiTex"
 {
     Properties
     {

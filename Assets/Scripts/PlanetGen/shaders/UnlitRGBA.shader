@@ -1,4 +1,4 @@
-﻿Shader "Universal Render Pipeline/Custom/UnlitRGBA"
+﻿Shader "PlanetGen/UnlitRGBA"
 {
     Properties
     {
