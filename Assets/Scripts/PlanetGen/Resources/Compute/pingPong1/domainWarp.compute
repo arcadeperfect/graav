@@ -3,31 +3,31 @@
 
 Texture2D<float4> field_in;
 RWTexture2D<float4> field_out;
-float warp;
+float amplitude;  // Strength of the warp effect
+float frequency;  // Scale/frequency of the noise
 
 [numthreads(8, 8, 1)]
 void Warp(uint3 id: SV_DispatchThreadID)
 {
-    field_out[id.xy] = field_in[id.xy];
-
-    float _NoiseScale = 10;
+    // Get texture dimensions for bounds checking
+    uint2 texSize;
+    field_in.GetDimensions(texSize.x, texSize.y);
     
-    float3 noiseCoord = float3(id.xy * _NoiseScale * 0.001, 1);
+    // Generate noise coordinates using frequency for scaling
+    float3 noiseCoord = float3(id.xy * frequency * 0.001, 1);
 
+    // Generate noise offsets
     float offsetX = SimplexNoise(noiseCoord);
     float offsetY = SimplexNoise(noiseCoord + float3(100.0, 100.0, 0.0));
 
-    // float offsetX = fbm(noiseCoord);
-    // float offsetY = fbm(noiseCoord + float3(100.0, 100.0, 0.0));
-    
-    float2 warpVector = float2(offsetX - 0.5, offsetY - 0.5) * warp;
+    // Create warp vector using amplitude for strength
+    float2 warpVector = float2(offsetX - 0.5, offsetY - 0.5) * amplitude;
     float2 warpedUV = id.xy + warpVector;
     
-    // Add bounds checking
-    uint2 texSize;
-    field_in.GetDimensions(texSize.x, texSize.y);
+    // Clamp to texture bounds
     warpedUV = clamp(warpedUV, 0, texSize - 1);
     
+    // Sample and output
     float4 inputColor = field_in[warpedUV];
     field_out[id.xy] = inputColor;
 }

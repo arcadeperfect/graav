@@ -1,0 +1,92 @@
+﻿#pragma kernel GenerateSDF
+
+// Input Buffer (from your Marching Squares pass)
+StructuredBuffer<float4> _Segments;
+
+// Output Texture (the SDF)
+RWTexture2D<float4> _SDFTexture;
+
+// Configuration
+uint _TextureResolution;
+StructuredBuffer<int> _SegmentCount;
+
+// --- UNUSED BINDINGS (kept for compatibility) ---
+Texture2D<float> _ScalarField;
+SamplerState sampler_ScalarField;
+float _IsoValue;
+uint _FieldResolution;
+// --- END UNUSED ---
+
+// Helper function with the bugfix for zero-length segments.
+float PointToLineSegmentDistance(float2 p, float2 a, float2 b, out float h)
+{
+    float2 pa = p - a;
+    float2 ba = b - a;
+    float dot_ba_ba = dot(ba, ba);
+    if (dot_ba_ba < 1e-9)
+    {
+        h = 0;
+        return length(pa);
+    }
+    h = saturate(dot(pa, ba) / dot_ba_ba);
+    return length(pa - ba * h);
+}
+
+[numthreads(8,8,1)]
+void GenerateSDF (uint3 id : SV_DispatchThreadID)
+{
+    int segment_count = _SegmentCount[0];
+    
+    if (segment_count == 0)
+    {
+        _SDFTexture[id.xy] = float4(1e9, 0, 0, 0);
+        return;
+    }
+
+    float2 normalizedPos = float2(id.xy) / _TextureResolution;
+    float2 worldPos = normalizedPos * 2.0f - 1.0f;
+
+    // *** MODIFICATION START: WINDING NUMBER ALGORITHM ***
+    // This is a much more robust method for determining inside/outside.
+    float totalAngle = 0.0;
+    for (uint i = 0; i < segment_count; i++)
+    {
+        float2 p1 = _Segments[i].xy;
+        float2 p2 = _Segments[i].zw;
+        
+        // Calculate the angle subtended by the segment's start and end points
+        // relative to the world position.
+        totalAngle += atan2(p1.y - worldPos.y, p1.x - worldPos.x) - 
+                      atan2(p2.y - worldPos.y, p2.x - worldPos.x);
+    }
+    
+    // If the absolute total angle is closer to 2*PI than to 0, we are inside.
+    // We check against PI (180 degrees) as the threshold.
+    bool isInside = abs(totalAngle) > 3.1415926535;
+    // *** MODIFICATION END ***
+
+    // This loop remains the same: it finds the closest segment and distance.
+    float minDistance = 1e9;
+    uint minIndex = 0;
+    float minH = 0;
+    for (uint j = 0; j < segment_count; j++)
+    {
+        float2 startPoint = _Segments[j].xy;
+        float2 endPoint = _Segments[j].zw;
+        
+        float h;
+        float dist = PointToLineSegmentDistance(worldPos, startPoint, endPoint, h);
+        
+        if (dist < minDistance)
+        {
+            minDistance = dist;
+            minIndex = j;
+            minH = h;
+        }
+    }
+    
+    // Create signed distance based on the winding number result
+    float signedDistance = isInside ? -minDistance : minDistance;
+    
+    _SDFTexture[id.xy] = float4(signedDistance, (float)minIndex, minH, 0);
+}

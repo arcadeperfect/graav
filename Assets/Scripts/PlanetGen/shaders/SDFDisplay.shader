@@ -1,14 +1,12 @@
-﻿Shader "PlanetGen/SDFDisplay"
+﻿
+
+Shader "PlanetGen/SDFDisplayContour"
 {
     Properties
     {
         _SDFTexture ("SDF Texture", 2D) = "white" {}
-        _ColorTexture ("Color Texture", 2D) = "white" {}
         _LineWidth ("Line Width", Float) = 0.02
         _LineColor ("Line Color", Color) = (1, 1, 1, 1)
-        _BandSpacing ("Band Spacing", Float) = 0.05
-        _MaxDistance ("Max Distance", Float) = 0.2
-        [Toggle] _ShowBands ("Show Bands", Float) = 0
     }
     
     SubShader
@@ -49,18 +47,11 @@
 
             TEXTURE2D(_SDFTexture);
             SAMPLER(sampler_SDFTexture);
-            
-            TEXTURE2D(_ColorTexture);
-            SAMPLER(sampler_ColorTexture);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _SDFTexture_ST;
-                float4 _ColorTexture_ST;
                 float _LineWidth;
                 float4 _LineColor;
-                float _BandSpacing;
-                float _MaxDistance;
-                float _ShowBands;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -73,72 +64,35 @@
 
             half4 frag(Varyings input) : SV_Target
             {
-                // Sample the SDF texture (RGBA format)
-                float4 sdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_SDFTexture, input.uv);
+                float signedDistance = SAMPLE_TEXTURE2D(_SDFTexture, sampler_SDFTexture, input.uv).r;
                 
-                // Extract SIGNED distance from red channel
-                float signedDistance = sdfData.r;
-                
-                // Check if this is the fallback value (very large distance)
                 if (abs(signedDistance) > 1000.0)
                 {
-                    // Show bright red for fallback/error values
                     return half4(1, 0, 0, 1);
                 }
                 
-                // Sample color from the color texture
-                half4 segmentColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_ColorTexture, input.uv);
+                // --- ROBUST CONTOUR LINE RENDERING ---
                 
-                if (_ShowBands > 0.5)
+                float distance = abs(signedDistance);
+                
+                // Get the width of a single screen pixel. 
+                // This is a stable alternative to fwidth(distance) for anti-aliasing.
+                // It ensures the fade is always one pixel wide, regardless of SDF complexity.
+                float screenPixelWidth = fwidth(1.0);
+                
+                // Calculate the edge of the line.
+                float lineEdge = _LineWidth * 0.5;
+
+                // Create a smooth falloff over the width of one pixel, centered on the line's edge.
+                // This is much more stable than the previous method for high-frequency SDFs.
+                float alpha = 1.0 - smoothstep(lineEdge - screenPixelWidth, lineEdge + screenPixelWidth, distance);
+                
+                if (alpha < 0.01)
                 {
-                    // Band rendering mode - bands only inside the shape (negative distance)
-                    if (signedDistance < 0) // Negative distance means inside the shape
-                    {
-                        // Use absolute distance for band calculations
-                        float absDistance = abs(signedDistance);
-                        
-                        // Calculate distance to nearest band center
-                        float bandPosition = absDistance / _BandSpacing;
-                        float nearestBandCenter = round(bandPosition) * _BandSpacing;
-                        float distanceToBandCenter = abs(absDistance - nearestBandCenter);
-                        
-                        // Show band if within lineWidth/2 of the band center
-                        if (distanceToBandCenter <= _LineWidth * 0.5)
-                        {
-                            return half4(segmentColor.rgb, 1.0); // Band color
-                        }
-                        else
-                        {
-                            return half4(0, 0, 0, 1); // Black between bands inside shape
-                        }
-                    }
-                    else
-                    {
-                        return half4(0, 0, 0, 1); // Black outside the shape
-                    }
+                    discard;
                 }
-                else
-                {
-                    // Normal line rendering mode - render the contour line
-                    // Use absolute distance for line rendering (we want the boundary)
-                    float distance = abs(signedDistance);
-                    
-                    // Anti-aliased line rendering using smoothstep
-                    float lineCenter = _LineWidth * 0.5;
-                    float aaWidth = fwidth(distance);
-                    
-                    // Create smooth falloff from line center to edge
-                    float alpha = 1.0 - smoothstep(lineCenter - aaWidth, lineCenter + aaWidth, distance);
-                    
-                    // If alpha is too low, discard pixel for performance
-                    if (alpha < 0.01)
-                    {
-                        discard;
-                    }
-                    
-                    // Blend segment color with calculated alpha
-                    return half4(segmentColor.rgb, alpha);
-                }
+                
+                return half4(_LineColor.rgb, alpha);
             }
             ENDHLSL
         }
