@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor.UI;
 using UnityEngine;
 
 namespace PlanetGen
 {
-    public class PlanetGenMain2 : MonoBehaviour
+    public class PlanetGenMain : MonoBehaviour
     {
         [Header("Field")] public int fieldWidth = 1024;
         [Range(0, 0.5f)] public float radius = 0.5f;
@@ -26,21 +27,12 @@ namespace PlanetGen
         public Color debugLineColor = Color.red;
         public float debugLineDuration = 0.1f;
         public int maxDebugSegments = 20000; // Limit to avoid performance issues
-
-        // public ComputeShader MarchingSqaresShader;
-        // public ComputeShader SdfGeneratorShader;
-
-
         private FieldGen fieldGen;
 
         private ComputePipeline computePipeline;
-        // private ComputePingPong computePingPong;
-
-        // public Renderer sdfRenderer;
         public Renderer fieldRenderer;
         public Renderer resultRenderer;
 
-        // private global::PlanetGen.FieldGen.TextureRegistry field_textures;
         private FieldGen.TextureRegistry field_textures;
 
         private struct CachedFieldParams
@@ -48,14 +40,14 @@ namespace PlanetGen
             public int FieldWidth, Blur, TextureRes;
             public float Radius, Amplitude, Frequency;
 
-            public bool HasChanged(PlanetGenMain2 genMain2)
+            public bool HasChanged(PlanetGenMain genMain)
             {
-                return FieldWidth != genMain2.fieldWidth
-                       || Blur != genMain2.blur
-                       || TextureRes != genMain2.textureRes
-                       || !Mathf.Approximately(Radius, genMain2.radius) ||
-                       !Mathf.Approximately(Amplitude, genMain2.amplitude) ||
-                       !Mathf.Approximately(Frequency, genMain2.frequency);
+                return FieldWidth != genMain.fieldWidth
+                       || Blur != genMain.blur
+                       || TextureRes != genMain.textureRes
+                       || !Mathf.Approximately(Radius, genMain.radius) ||
+                       !Mathf.Approximately(Amplitude, genMain.amplitude) ||
+                       !Mathf.Approximately(Frequency, genMain.frequency);
             }
         }
 
@@ -63,13 +55,18 @@ namespace PlanetGen
         {
             public float Iso, LineWidth;
             public int TextureRes;
+            public float DomainWarp, DomainWarpScale; // Add these
+            public int DomainWarpIterations; // Add this
 
-            public bool HasChanged(PlanetGenMain2 genMain2)
+            public bool HasChanged(PlanetGenMain genMain)
             {
                 return
-                    !Mathf.Approximately(Iso, genMain2.iso) ||
-                    !Mathf.Approximately(LineWidth, genMain2.lineWidth) ||
-                    TextureRes != genMain2.textureRes;
+                    !Mathf.Approximately(Iso, genMain.iso) ||
+                    !Mathf.Approximately(LineWidth, genMain.lineWidth) ||
+                    !Mathf.Approximately(DomainWarp, genMain.domainWarp) || // Add
+                    !Mathf.Approximately(DomainWarpScale, genMain.domainWarpScale) || // Add  
+                    TextureRes != genMain.textureRes ||
+                    DomainWarpIterations != genMain.domainWarpIterations; // Add
             }
         }
 
@@ -88,8 +85,7 @@ namespace PlanetGen
             field_textures = new FieldGen.TextureRegistry(fieldWidth);
             fieldGen = new FieldGen();
             computePipeline = new ComputePipeline(this);
-            computePipeline.InitBuffers(fieldWidth, textureRes);
-            computePipeline.InitPingPong();
+            computePipeline.Init(fieldWidth, textureRes);
         }
 
 
@@ -99,8 +95,8 @@ namespace PlanetGen
             {
                 // print("regen field");
                 fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, fieldWidth, blur);
-                computePipeline.InitBuffers(fieldWidth, textureRes);
-                fieldRenderer.material.SetTexture("_FieldTex", field_textures.Fields);
+                computePipeline.Init(fieldWidth, textureRes);
+                fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarField);
                 fieldRenderer.material.SetTexture("_ColorTex", field_textures.Colors);
                 UpdateCachedParams();
             }
@@ -115,8 +111,6 @@ namespace PlanetGen
 
 
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
-            // resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
-
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors); // Add this line
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
             resultRenderer.material.SetFloat("_ShowBands", 1.0f);
@@ -128,11 +122,13 @@ namespace PlanetGen
         {
             if (cachedFieldParams.HasChanged(this))
             {
-                computePipeline.InitBuffers(fieldWidth, textureRes);
+                print("cachedFieldParams has changed");
+                computePipeline.Init(fieldWidth, textureRes);
                 RegenField();
             }
             else if (cachedComputeParams.HasChanged(this))
             {
+                print("cachedComputeParams has changed");
                 RegenCompute();
             }
 
@@ -148,7 +144,6 @@ namespace PlanetGen
         public void OnDestroy()
         {
             computePipeline?.Dispose();
-            // computePingPong?.Dispose();
             fieldGen?.Dispose();
             // todo implement dispose on fieldGen
         }
@@ -167,13 +162,17 @@ namespace PlanetGen
             cachedComputeParams = new CachedComputeParams()
             {
                 Iso = this.iso,
-                LineWidth = this.lineWidth
+                LineWidth = this.lineWidth,
+                TextureRes = this.textureRes,
+                DomainWarp = this.domainWarp, // Add
+                DomainWarpScale = this.domainWarpScale, // Add
+                DomainWarpIterations = this.domainWarpIterations // Add
             };
         }
 
         private class ComputePipeline : System.IDisposable
         {
-            private PlanetGenMain2 parent;
+            private PlanetGenMain parent;
             private int _marchingSquaresKernel;
             private int _sdfKernel;
             private int _sdfWarperKernel;
@@ -182,7 +181,8 @@ namespace PlanetGen
             private ComputeShader SdfGeneratorShader;
             private ComputeShader SdfDomainWarpShader;
 
-            private PingPongPipeline testPingPong;
+            private PingPongPipeline domainWarpPingPong;
+            private PingPongPipeline jumpFloodPingPong;
 
             public ComputeBuffer SegmentsBuffer { get; private set; }
 
@@ -194,10 +194,8 @@ namespace PlanetGen
             public RenderTexture SdfTexture { get; private set; }
             public RenderTexture SdfTextureWarped { get; private set; }
 
-            public ComputePipeline(PlanetGenMain2 parent)
+            public ComputePipeline(PlanetGenMain parent)
             {
-                // string computeShaderLocatgion = "C"
-
                 this.parent = parent;
                 MarchingSquaresShader = Resources.Load<ComputeShader>("Compute/MarchingSquares");
                 if (MarchingSquaresShader == null) Debug.LogWarning("shader is null");
@@ -218,11 +216,19 @@ namespace PlanetGen
             /// Initializes or re-initializes all compute buffers.
             /// Called when the field width changes or at the start.
             /// </summary>
-            public void InitBuffers(int newFieldWidth, int newTextureRes)
+            public void Init(int newFieldWidth, int newTextureRes)
+            {
+                InitBuffers(newFieldWidth, newTextureRes);
+                InitPingPongPipelines();
+                BindStaticResources();
+                
+            }
+
+            void InitBuffers(int fieldWidth, int textureRes)
             {
                 DisposeBuffers();
 
-                int maxSegments = newFieldWidth * newFieldWidth * 2;
+                int maxSegments = fieldWidth * fieldWidth * 2;
 
                 SegmentsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Append);
                 SegmentColorsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Append);
@@ -232,28 +238,52 @@ namespace PlanetGen
                 DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0 });
 
                 if (SdfTexture != null) SdfTexture.Release();
-                SdfTexture = new RenderTexture(newTextureRes, newTextureRes, 0, RenderTextureFormat.ARGBFloat);
+                SdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat);
                 SdfTexture.enableRandomWrite = true;
                 SdfTexture.Create();
 
                 if (SdfTextureWarped != null) SdfTextureWarped.Release();
-                SdfTextureWarped = new RenderTexture(newTextureRes, newTextureRes, 0, RenderTextureFormat.ARGBFloat);
+                SdfTextureWarped = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat);
                 SdfTextureWarped.enableRandomWrite = true;
                 SdfTextureWarped.Create();
             }
 
-            public void InitPingPong()
+            private ComputeResources domainWarpOutput;
+            void InitPingPongPipelines()
             {
-                testPingPong = new PingPongPipeline()
+                domainWarpPingPong = new PingPongPipeline()
                     .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
                     .AddStep(Resources.Load<ComputeShader>("Compute/pingPong1/domainWarp"), "Warp", conf => conf
                         .WithIterations(() => parent.domainWarpIterations)
                         .WithFloatParam("amplitude", () => parent.domainWarp)
                         .WithFloatParam("frequency", () => parent.domainWarpScale)
                     );
-                testPingPong.Initialize(parent.fieldWidth);
+                domainWarpPingPong.Init(parent.textureRes);
+
+                jumpFloodPingPong = new PingPongPipeline()
+                    .WithResources(spec =>
+                        spec.AddTexture("distanceField", RenderTextureFormat.ARGBFloat)
+                            .AddTexture("edges", RenderTextureFormat.ARGB32))
+                    .AddStep(Resources.Load<ComputeShader>("Compute/pingPong1/jumpFlood"), "JumpFlood", conf => conf
+                        .WithIterations(() => 1)
+                    );
+                jumpFloodPingPong.Init(parent.textureRes);
             }
 
+            void BindStaticResources()
+            {
+                var msShader = MarchingSquaresShader;
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
+                
+                var sdfShader = SdfGeneratorShader;
+                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
+
+            }
+            
             /// <summary>
             /// Sets shader parameters and executes the Marching Squares compute shader.
             /// </summary>
@@ -261,44 +291,30 @@ namespace PlanetGen
             {
                 if (SegmentsBuffer == null) return;
 
-                if (testPingPong == null)
+                if (domainWarpPingPong == null)
                 {
                     Debug.LogError("testPingPong is null - make sure InitPingPong() was called");
                     return;
                 }
 
-                // Create temporary RenderTexture for the ping-pong input
-                var tempInput =
-                    new RenderTexture(parent.fieldWidth, parent.fieldWidth, 0, RenderTextureFormat.ARGBFloat)
-                    {
-                        enableRandomWrite = true,
-                        filterMode = FilterMode.Point
-                    };
-                tempInput.Create();
-
-                ComputeResources results = null;
 
                 try
                 {
-                    // Copy the Texture2D to RenderTexture
-                    Graphics.Blit(textures.Fields, tempInput);
-
-                    // Create input resources
                     var input = new ComputeResources();
-                    input.Textures["field"] = tempInput;
+                    input.Textures["field"] = textures.ScalarField;
 
                     // Execute ping-pong pipeline
-                    results = testPingPong.Execute(input);
+                    var domainWarpResults = domainWarpPingPong.Dispatch(input);
+
+                    domainWarpPingPong.Dispatch(input);
 
                     // Reset buffer counters
                     SegmentsBuffer.SetCounterValue(0);
                     SegmentColorsBuffer.SetCounterValue(0);
 
-                    // Setup and dispatch Marching Squares shader
+                    // // Setup and dispatch Marching Squares shader
                     var msShader = MarchingSquaresShader;
-                    msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
-                    msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
-                    msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", results.Textures["field"]);
+                    msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", domainWarpResults.Textures["field"]);
                     msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
                     msShader.SetFloat("IsoValue", iso);
                     msShader.SetInt("TextureWidth", parent.fieldWidth);
@@ -312,37 +328,16 @@ namespace PlanetGen
 
                     // Setup and dispatch SDF Generator shader
                     var sdfShader = SdfGeneratorShader;
-                    sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
-                    sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
-                    sdfShader.SetTexture(_sdfKernel, "_ScalarField", textures.Fields);
+                    sdfShader.SetTexture(_sdfKernel, "_ScalarField", domainWarpResults.Textures["field"]);
                     sdfShader.SetFloat("_IsoValue", iso);
                     sdfShader.SetInt("_FieldResolution", parent.fieldWidth);
                     sdfShader.SetInt("_TextureResolution", parent.textureRes);
-                    sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
 
                     int sdfThreadGroups = Mathf.CeilToInt(parent.textureRes / 8.0f);
                     sdfShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
-
-                    // Optional: Domain warp shader (currently commented out)
-                    // var warpShader = SdfDomainWarpShader;
-                    // warpShader.SetTexture(_sdfWarperKernel, "_In", SdfTexture);
-                    // warpShader.SetTexture(_sdfWarperKernel, "_Out", SdfTextureWarped);
-                    // warpShader.SetFloat("_WarpAmount", parent.domainWarp);
-                    // warpShader.SetFloat("_NoiseScale", parent.domainWarpScale);
-                    // warpShader.Dispatch(_sdfWarperKernel, sdfThreadGroups, sdfThreadGroups, 1);
                 }
                 finally
                 {
-                    // Clean up temporary resources
-                    if (tempInput != null)
-                    {
-                        // Ensure no RenderTexture is active before releasing
-                        RenderTexture.active = null;
-                        tempInput.Release();
-                    }
-
-                    // Note: Don't dispose 'results' here as it points to the pipeline's internal resources
-                    // The pipeline manages its own resource lifecycle
                 }
             }
 
@@ -352,7 +347,6 @@ namespace PlanetGen
                 SegmentColorsBuffer?.Dispose();
                 DrawArgsBuffer?.Dispose();
                 SegmentCountBuffer?.Dispose();
-                // NEW: Dispose the texture
                 if (SdfTexture != null) SdfTexture.Release();
             }
 
@@ -417,10 +411,5 @@ namespace PlanetGen
         }
 
         #endregion
-
-        // public void Dispose()
-        // {
-        //     computePingPong.Dispose();
-        // }
     }
 }

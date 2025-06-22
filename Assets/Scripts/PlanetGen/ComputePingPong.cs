@@ -1074,6 +1074,8 @@ namespace PlanetGen
         private bool initialized = false;
         private int currentWidth;
 
+        // public ComputeResources Output { get; private set; }
+        
         public ComputeResources Result { get; private set; }
 
         // Fluent configuration
@@ -1093,7 +1095,7 @@ namespace PlanetGen
         }
 
         // Initialize with a width - creates all internal buffers
-        public void Initialize(int width)
+        public void Init(int width)
         {
             if (resourceSpec == null)
                 throw new InvalidOperationException("Must configure resources before initializing");
@@ -1109,10 +1111,11 @@ namespace PlanetGen
             pongResources = CreateResourceSet(width);
 
             initialized = true;
+            // return Output;
         }
 
         // Execute with input resources - can be external or from previous pipeline
-        public ComputeResources Execute(ComputeResources input)
+        public ComputeResources Dispatch(ComputeResources input)
         {
             if (!initialized)
                 throw new InvalidOperationException("Pipeline not initialized");
@@ -1153,7 +1156,6 @@ namespace PlanetGen
                     totalIterations++;
                 }
             }
-
             Result = currentRead;
             return Result;
         }
