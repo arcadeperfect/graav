@@ -7,11 +7,11 @@ namespace PlanetGen
 {
     public class JumpFlooder: IDisposable
     {
-        ComputeShader JumpFloodShader;
-        int _jumpFloodKernel;
-        int _seedKernel;
-        int _seedFromScalarFieldKernel;
-        private int _finalizeKernel;
+        private readonly ComputeShader jumpFloodShader;
+        private readonly int jumpFloodKernel;
+        private readonly int seedKernel;
+        private readonly int seedFromScalarFieldKernel;
+        private readonly int finalizeKernel;
         
 
         // JFA intermediate textures
@@ -22,11 +22,11 @@ namespace PlanetGen
 
         public JumpFlooder()
         {
-            JumpFloodShader = Resources.Load<ComputeShader>(JumpFloodCompute.Path);
-            _jumpFloodKernel = JumpFloodShader.FindKernel(JumpFloodCompute.Kernels.JumpFlood);
-            _seedKernel = JumpFloodShader.FindKernel(JumpFloodCompute.Kernels.SeedFromSegments);
-            _seedFromScalarFieldKernel = JumpFloodShader.FindKernel(JumpFloodCompute.Kernels.SeedFromScalarField);
-            _finalizeKernel = JumpFloodShader.FindKernel(JumpFloodCompute.Kernels.FinalizeSDF);
+            jumpFloodShader = Resources.Load<ComputeShader>(JumpFloodCompute.Path);
+            jumpFloodKernel = jumpFloodShader.FindKernel(JumpFloodCompute.Kernels.JumpFlood);
+            seedKernel = jumpFloodShader.FindKernel(JumpFloodCompute.Kernels.SeedFromSegments);
+            seedFromScalarFieldKernel = jumpFloodShader.FindKernel(JumpFloodCompute.Kernels.SeedFromScalarField);
+            finalizeKernel = jumpFloodShader.FindKernel(JumpFloodCompute.Kernels.FinalizeSDF);
         }
 
         public void InitJFATextures(int textureRes)
@@ -54,7 +54,7 @@ namespace PlanetGen
 
         public void RunJumpFlood()
         {
-            var shader = JumpFloodShader;
+            var shader = jumpFloodShader;
 
             RenderTexture ping = seedTexture;
             RenderTexture pong = jfaTempTexture;
@@ -64,13 +64,13 @@ namespace PlanetGen
 
             for (int jump = maxJump; jump >= 1; jump /= 2)
             {
-                shader.SetTexture(_jumpFloodKernel, "_InputTexture", ping);
-                shader.SetTexture(_jumpFloodKernel, "_OutputTexture", pong);
+                shader.SetTexture(jumpFloodKernel, "_InputTexture", ping);
+                shader.SetTexture(jumpFloodKernel, "_OutputTexture", pong);
                 shader.SetInt("_JumpDistance", jump);
                 shader.SetInt("_TextureResolution", textureResolution);
 
                 int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-                shader.Dispatch(_jumpFloodKernel, threadGroups, threadGroups, 1);
+                shader.Dispatch(jumpFloodKernel, threadGroups, threadGroups, 1);
 
                 // Swap ping and pong for next iteration
                 (ping, pong) = (pong, ping);
@@ -85,17 +85,17 @@ namespace PlanetGen
         public void FinalizeSDF(RenderTexture outputTexture, bool outputUnsigned, RenderTexture scalarField,
             float isoValue)
         {
-            var shader = JumpFloodShader;
+            var shader = jumpFloodShader;
 
-            shader.SetTexture(_finalizeKernel, "_JFAResult", seedTexture);
-            shader.SetTexture(_finalizeKernel, "_SDFTexture", outputTexture);
+            shader.SetTexture(finalizeKernel, "_JFAResult", seedTexture);
+            shader.SetTexture(finalizeKernel, "_SDFTexture", outputTexture);
             shader.SetInt("_TextureResolution", textureResolution);
             shader.SetBool("_OutputUnsigned", outputUnsigned);
 
             // Set scalar field and iso value if provided (for sign determination)
             if (scalarField != null)
             {
-                shader.SetTexture(_finalizeKernel, "_ScalarField", scalarField);
+                shader.SetTexture(finalizeKernel, "_ScalarField", scalarField);
                 shader.SetFloat("_IsoValue", isoValue);
                 shader.SetBool("_HasScalarField", true);
             }
@@ -105,33 +105,49 @@ namespace PlanetGen
             }
 
             int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-            shader.Dispatch(_finalizeKernel, threadGroups, threadGroups, 1);
+            shader.Dispatch(finalizeKernel, threadGroups, threadGroups, 1);
         }
         
-        public void GenerateSeeds(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer)
+        public void GenerateSeedsFromSegments(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer)
         {
-            var shader = JumpFloodShader;
+            var shader = jumpFloodShader;
         
-            shader.SetBuffer(_seedKernel, "_Segments", segmentsBuffer);
-            shader.SetBuffer(_seedKernel, "_SegmentCount", segmentCountBuffer);
-            shader.SetTexture(_seedKernel, "_SeedTexture", seedTexture);
+            shader.SetBuffer(seedKernel, "_Segments", segmentsBuffer);
+            shader.SetBuffer(seedKernel, "_SegmentCount", segmentCountBuffer);
+            shader.SetTexture(seedKernel, "_SeedTexture", seedTexture);
             shader.SetInt("_TextureResolution", textureResolution);
         
             int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-            shader.Dispatch(_seedKernel, threadGroups, threadGroups, 1);
+            shader.Dispatch(seedKernel, threadGroups, threadGroups, 1);
         }
         
         public void GenerateSeedsFromScalarField(RenderTexture scalarField, RenderTexture seedTexture, float isoValue)
         {
-            var shader = JumpFloodShader;
+            var shader = jumpFloodShader;
             this.seedTexture = seedTexture;
-            shader.SetTexture(_seedFromScalarFieldKernel, "_ScalarField", scalarField);
+            shader.SetTexture(seedFromScalarFieldKernel, "_ScalarField", scalarField);
             shader.SetFloat("_IsoValue", isoValue);
-            shader.SetTexture(_seedFromScalarFieldKernel, "_SeedTexture", seedTexture);
+            shader.SetTexture(seedFromScalarFieldKernel, "_SeedTexture", seedTexture);
             shader.SetInt("_TextureResolution", textureResolution);
 
             int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-            shader.Dispatch(_seedFromScalarFieldKernel, threadGroups, threadGroups, 1);
+            shader.Dispatch(seedFromScalarFieldKernel, threadGroups, threadGroups, 1);
+        }
+        
+        public void GenerateSeedsFromScalarField(RenderTexture scalarField, float isoValue)
+        {
+            var shader = jumpFloodShader;
+    
+            shader.SetTexture(seedFromScalarFieldKernel, "_ScalarField", scalarField);
+            shader.SetFloat("_IsoValue", isoValue);
+    
+            // Use the seedTexture that belongs to this class instance
+            shader.SetTexture(seedFromScalarFieldKernel, "_SeedTexture", this.seedTexture); 
+    
+            shader.SetInt("_TextureResolution", textureResolution);
+
+            int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
+            shader.Dispatch(seedFromScalarFieldKernel, threadGroups, threadGroups, 1);
         }
         
         // ADDED: Dispose method to properly clean up resources

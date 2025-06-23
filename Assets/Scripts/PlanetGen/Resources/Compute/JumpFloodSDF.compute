@@ -144,7 +144,7 @@ void FinalizeSDF(uint3 id : SV_DispatchThreadID)
         float2 fieldUV = (worldPos + 1.0) * 0.5; // Convert [-1,1] to [0,1]
         float fieldValue = _ScalarField.SampleLevel(sampler_ScalarField, fieldUV, 0).r;
         
-        float sign = (fieldValue < _IsoValue) ? -1.0f : 1.0f;
+        float sign = (fieldValue < _IsoValue) ? 1.0f : -1.0f;
         
         // Format: R = unsigned distance, G = sign, B = segment ID, A = unused
         _SDFTexture[id.xy] = float4(distance, sign, segmentID, 0);
