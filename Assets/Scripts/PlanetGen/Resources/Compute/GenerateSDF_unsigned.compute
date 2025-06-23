@@ -1,0 +1,68 @@
+﻿#pragma kernel GenerateSDF_Unsigned
+
+// Input Buffer (from your Marching Squares pass)
+StructuredBuffer<float4> _Segments;
+
+// Input scalar field texture
+Texture2D<float> _ScalarField;
+SamplerState sampler_ScalarField;
+
+// Output Texture (the SDF)
+// We use float4 to store: signed distance, segment index, and interpolation factor.
+RWTexture2D<float4> _SDFTexture;
+
+// Configuration
+uint _TextureResolution;
+uint _FieldResolution; // The resolution of the field, used to scale the coordinates
+StructuredBuffer<int> _SegmentCount; // Number of segments, used to avoid hardcoding
+// float _IsoValue; // The iso value used for marching squares
+
+// Helper function to compute the shortest distance from a point 'p'
+// to a line segment defined by points 'a' and 'b'.
+// It also returns the interpolation factor 'h' via an out parameter.
+float PointToLineSegmentDistance(float2 p, float2 a, float2 b, out float h)
+{
+    float2 pa = p - a;
+    float2 ba = b - a;
+    h = saturate(dot(pa, ba) / dot(ba, ba));
+    return length(pa - ba * h);
+}
+
+[numthreads(8,8,1)]
+void GenerateSDF_Unsigned (uint3 id : SV_DispatchThreadID)
+{
+    int segment_count = _SegmentCount[0];
+    
+    if (segment_count == 0)
+    {
+        _SDFTexture[id.xy] = float4(1e9, 0, 0, 0);
+        return;
+    }
+
+    float2 normalizedPos = float2(id.xy) / _TextureResolution;
+    float2 worldPos = normalizedPos * 2.0f - 1.0f;
+
+    // Just find the minimum distance - no sign needed!
+    float minDistance = 1e9;
+    uint minIndex = 0;
+    float minH = 0;
+
+    for (uint i = 0; i < segment_count; i++)
+    {
+        float2 startPoint = _Segments[i].xy;
+        float2 endPoint = _Segments[i].zw;
+        
+        float h;
+        float dist = PointToLineSegmentDistance(worldPos, startPoint, endPoint, h);
+        
+        if (dist < minDistance)
+        {
+            minDistance = dist;
+            minIndex = i;
+            minH = h;
+        }
+    }
+    
+    // Store unsigned distance - no sign calculation needed
+    _SDFTexture[id.xy] = float4(minDistance, (float)minIndex, minH, 0);
+}

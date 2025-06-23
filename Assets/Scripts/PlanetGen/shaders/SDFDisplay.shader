@@ -1,19 +1,22 @@
-﻿
-
-Shader "PlanetGen/SDFDisplayContour"
+﻿//
+Shader "PlanetGen/SDFDisplayDualPass"
 {
     Properties
     {
-        _SDFTexture ("SDF Texture", 2D) = "white" {}
-        _LineWidth ("Line Width", Float) = 0.02
-        _LineColor ("Line Color", Color) = (1, 1, 1, 1)
+        _SDFTexture ("Main SDF Texture", 2D) = "white" {}
+        _BandSDFTexture ("Band SDF Texture", 2D) = "white" {}
+        _ColorTexture ("Original Field Color Texture", 2D) = "white" {}
+        _LineWidth ("Main Line Width", Float) = 0.02
+        _BandLineWidth ("Band Line Width", Float) = 0.01
+        _BandColor ("Band Color", Color) = (0.5, 0.5, 0.5, 1)
+        _UseBandColor ("Use Band Color Override", Float) = 0
     }
-    
+
     SubShader
     {
-        Tags 
-        { 
-            "RenderType" = "Transparent" 
+        Tags
+        {
+            "RenderType" = "Transparent"
             "RenderPipeline" = "UniversalPipeline"
             "Queue" = "Transparent"
         }
@@ -22,8 +25,7 @@ Shader "PlanetGen/SDFDisplayContour"
         Pass
         {
             Name "Unlit"
-            
-            // Enable alpha blending for anti-aliasing
+
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
 
@@ -46,12 +48,20 @@ Shader "PlanetGen/SDFDisplayContour"
             };
 
             TEXTURE2D(_SDFTexture);
+            TEXTURE2D(_BandSDFTexture);
+            TEXTURE2D(_ColorTexture);
             SAMPLER(sampler_SDFTexture);
+            SAMPLER(sampler_BandSDFTexture);
+            SAMPLER(sampler_ColorTexture);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _SDFTexture_ST;
+                float4 _BandSDFTexture_ST;
+                float4 _ColorTexture_ST;
                 float _LineWidth;
-                float4 _LineColor;
+                float _BandLineWidth;
+                // float4 _BandColor;
+                // float _UseBandColor;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -64,35 +74,72 @@ Shader "PlanetGen/SDFDisplayContour"
 
             half4 frag(Varyings input) : SV_Target
             {
-                float signedDistance = SAMPLE_TEXTURE2D(_SDFTexture, sampler_SDFTexture, input.uv).r;
-                
-                if (abs(signedDistance) > 1000.0)
-                {
-                    return half4(1, 0, 0, 1);
-                }
-                
-                // --- ROBUST CONTOUR LINE RENDERING ---
-                
-                float distance = abs(signedDistance);
-                
-                // Get the width of a single screen pixel. 
-                // This is a stable alternative to fwidth(distance) for anti-aliasing.
-                // It ensures the fade is always one pixel wide, regardless of SDF complexity.
-                float screenPixelWidth = fwidth(1.0);
-                
-                // Calculate the edge of the line.
-                float lineEdge = _LineWidth * 0.5;
+                // Sample both SDF textures
+                float4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_SDFTexture, input.uv);
+                float4 bandSdfData = SAMPLE_TEXTURE2D(_BandSDFTexture, sampler_BandSDFTexture, input.uv);
 
-                // Create a smooth falloff over the width of one pixel, centered on the line's edge.
-                // This is much more stable than the previous method for high-frequency SDFs.
-                float alpha = 1.0 - smoothstep(lineEdge - screenPixelWidth, lineEdge + screenPixelWidth, distance);
-                
-                if (alpha < 0.01)
+                // Extract distance data from SDF textures
+                float mainSignedDistance = mainSdfData.r;
+                float bandSignedDistance = bandSdfData.r;
+
+                // Sample the original field color texture
+                float2 colorUV = TRANSFORM_TEX(input.uv, _ColorTexture);
+                half4 fieldColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_ColorTexture, colorUV);
+
+                // Check for invalid distances (debugging)
+                if (abs(mainSignedDistance) > 1000.0 && abs(bandSignedDistance) > 1000.0)
+                {
+                    return half4(1, 0, 0, 0.5); // Semi-transparent red for debugging
+                }
+
+                // --- MAIN LINE RENDERING ---
+                float mainDistanceFromZero = abs(mainSignedDistance);
+                float mainScreenPixelWidth = fwidth(mainDistanceFromZero);
+                float mainLineHalfWidth = _LineWidth * 0.5;
+
+                // Anti-aliased line rendering using smoothstep
+                float mainAlpha = 1.0 - smoothstep(
+                    mainLineHalfWidth - mainScreenPixelWidth,
+                    mainLineHalfWidth + mainScreenPixelWidth,
+                    mainDistanceFromZero
+                );
+
+                // --- BAND LINE RENDERING ---
+                // float bandDistanceFromZero = abs(bandSignedDistance);
+                float bandDistanceFromZero = abs(bandSignedDistance);
+                float bandScreenPixelWidth = fwidth(bandDistanceFromZero);
+                float bandLineHalfWidth = _BandLineWidth * 0.5;
+
+                // Anti-aliased band line rendering
+                float bandAlpha = 1.0 - smoothstep(
+                    bandLineHalfWidth - bandScreenPixelWidth,
+                    bandLineHalfWidth + bandScreenPixelWidth,
+                    bandDistanceFromZero
+                );
+
+                // --- COMBINE MAIN LINE AND BANDS ---
+                half4 finalColor = half4(0, 0, 0, 0);
+
+                // Main line takes priority and uses field colors
+                if (mainAlpha > 0.01)
+                {
+                    finalColor = half4(fieldColor.rgb, mainAlpha * fieldColor.a);
+                }
+                // Band lines appear where main line is not present
+                else if (bandAlpha > 0.01)
+                {
+                    // Use field color but with reduced intensity for distinction
+                    half4 bandFieldColor = fieldColor * 0.7; // Darken the field color for bands
+                    finalColor = half4(bandFieldColor.rgb, bandAlpha * bandFieldColor.a);
+                }
+
+                // Discard transparent pixels to improve performance
+                if (finalColor.a < 0.01)
                 {
                     discard;
                 }
-                
-                return half4(_LineColor.rgb, alpha);
+
+                return finalColor;
             }
             ENDHLSL
         }

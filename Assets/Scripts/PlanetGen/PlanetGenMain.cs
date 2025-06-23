@@ -7,28 +7,34 @@ namespace PlanetGen
 {
     public class PlanetGenMain : MonoBehaviour
     {
-        [Header("Field")] public int fieldWidth = 1024;
+        [Header("Field Generation")] public int fieldWidth = 1024;
         [Range(0, 0.5f)] public float radius = 0.5f;
         [Range(0, 10f)] public float amplitude = 0.5f;
         [Range(0, 10f)] public float frequency = 0.5f;
         [Range(0, 5)] public int blur;
 
-        [Header("Compute Shaders")] public float iso = 0.5f;
-
-        [Header("SDF")] public int textureRes = 1024;
-        [Range(0, 1f)] public float lineWidth;
-        public float bandSpacing = 0.05f; // Distance between band centers
-        public float maxDistance = 0.2f; // How far from contour to show bands
-        public float domainWarp = 0f;
+        [Header("Pre")] public float domainWarp = 0f;
         public float domainWarpScale;
         public int domainWarpIterations = 1;
+
+        [Header("SDF 1")] public int textureRes = 1024;
+        [Range(0, 1f)] public float lineWidth;
+        public float bandSpacing = 0.05f;
+
+        [Header("SDF 2")] public float domainWarp2 = 0f;
+        public float domainWarpScale2;
+        public int domainWarpIterations2 = 1;
+
+        [Header("Bands")] public int numberOfBands = 5;
+        public float bandStartOffset = -0.05f;
+        public float bandInterval = 0.02f;
 
         [Header("Debug")] public bool enableDebugDraw = false;
         public Color debugLineColor = Color.red;
         public float debugLineDuration = 0.1f;
-        public int maxDebugSegments = 20000; // Limit to avoid performance issues
-        private FieldGen fieldGen;
+        public int maxDebugSegments = 20000;
 
+        private FieldGen fieldGen;
         private ComputePipeline computePipeline;
         public Renderer fieldRenderer;
         public Renderer resultRenderer;
@@ -53,27 +59,43 @@ namespace PlanetGen
 
         private struct CachedComputeParams
         {
-            public float Iso, LineWidth;
+            public float LineWidth;
             public int TextureRes;
-            public float DomainWarp, DomainWarpScale; // Add these
-            public int DomainWarpIterations; // Add this
+            public float DomainWarp, DomainWarpScale;
+            public int DomainWarpIterations;
+            public float DomainWarp2, DomainWarpScale2;
+            public int DomainWarpIterations2;
+            public int NumberOfBands;
+            public float BandStartOffset, BandInterval;
 
             public bool HasChanged(PlanetGenMain genMain)
             {
-                return
-                    !Mathf.Approximately(Iso, genMain.iso) ||
+
+                var changed = 
                     !Mathf.Approximately(LineWidth, genMain.lineWidth) ||
-                    !Mathf.Approximately(DomainWarp, genMain.domainWarp) || // Add
-                    !Mathf.Approximately(DomainWarpScale, genMain.domainWarpScale) || // Add  
+                    !Mathf.Approximately(DomainWarp, genMain.domainWarp) ||
+                    !Mathf.Approximately(DomainWarpScale, genMain.domainWarpScale) ||
                     TextureRes != genMain.textureRes ||
-                    DomainWarpIterations != genMain.domainWarpIterations; // Add
+                    DomainWarpIterations != genMain.domainWarpIterations ||
+                    NumberOfBands != genMain.numberOfBands ||
+                    !Mathf.Approximately(BandStartOffset, genMain.bandStartOffset) ||
+                    !Mathf.Approximately(BandInterval, genMain.bandInterval) ||
+                    !Mathf.Approximately(DomainWarp2, genMain.domainWarp2) ||
+                    !Mathf.Approximately(DomainWarpScale2, genMain.domainWarpScale2) ||
+                    DomainWarpIterations2 != genMain.domainWarpIterations2;
+                // if (changed)
+                // {
+                //     print("Compute params changed");
+                // }
+                
+                return changed;
             }
         }
 
         private CachedFieldParams cachedFieldParams;
         private CachedComputeParams cachedComputeParams;
 
-        public void Start()
+        public void Start() 
         {
             print("start");
             Init();
@@ -88,12 +110,10 @@ namespace PlanetGen
             computePipeline.Init(fieldWidth, textureRes);
         }
 
-
         void RegenField()
         {
             if (cachedFieldParams.HasChanged(this))
             {
-                // print("regen field");
                 fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, fieldWidth, blur);
                 computePipeline.Init(fieldWidth, textureRes);
                 fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarField);
@@ -104,48 +124,50 @@ namespace PlanetGen
             RegenCompute();
         }
 
-
         void RegenCompute()
         {
-            computePipeline.Dispatch(field_textures, iso, lineWidth);
+            computePipeline.Dispatch(field_textures);
 
-
+            // Set the SDF textures
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
-            resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors); // Add this line
+            resultRenderer.material.SetTexture("_BandSDFTexture", computePipeline.BandSdfTexture);
+
+            // Set the original field color texture - this is the key addition
+            resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors);
+
+            // Set line widths
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.1f);
-            resultRenderer.material.SetFloat("_ShowBands", 1.0f);
-            resultRenderer.material.SetFloat("_BandSpacing", bandSpacing * 0.1f); // Distance between band centers
-            resultRenderer.material.SetFloat("_MaxDistance", maxDistance); // How far from contour to show bands
+            resultRenderer.material.SetFloat("_BandLineWidth", lineWidth * 0.05f);
+
+            // Optional: Set band color and whether to use it
+            // Set to 1 to use the fixed _BandColor, set to 0 to use field colors for bands
+            resultRenderer.material.SetFloat("_UseBandColor", 1.0f); // You can make this a public parameter
         }
 
         public void Update()
         {
             if (cachedFieldParams.HasChanged(this))
             {
-                print("cachedFieldParams has changed");
                 computePipeline.Init(fieldWidth, textureRes);
-                RegenField();
+                RegenField(); // This already calls UpdateCachedParams
             }
             else if (cachedComputeParams.HasChanged(this))
             {
-                print("cachedComputeParams has changed");
                 RegenCompute();
+                UpdateCachedParams(); // Update cache only after compute
             }
 
             if (enableDebugDraw)
             {
-                DebugDrawMarchingSquaresBuffer();
+                // DebugDrawMarchingSquaresBuffer();
+                DebugBandGeneration();
             }
-
-            UpdateCachedParams();
         }
-
 
         public void OnDestroy()
         {
             computePipeline?.Dispose();
             fieldGen?.Dispose();
-            // todo implement dispose on fieldGen
         }
 
         void UpdateCachedParams()
@@ -156,72 +178,84 @@ namespace PlanetGen
                 Radius = this.radius,
                 Amplitude = this.amplitude,
                 Frequency = this.frequency,
-                Blur = this.blur, TextureRes = this.textureRes
+                Blur = this.blur,
+                TextureRes = this.textureRes
             };
 
             cachedComputeParams = new CachedComputeParams()
             {
-                Iso = this.iso,
                 LineWidth = this.lineWidth,
                 TextureRes = this.textureRes,
-                DomainWarp = this.domainWarp, // Add
-                DomainWarpScale = this.domainWarpScale, // Add
-                DomainWarpIterations = this.domainWarpIterations // Add
+                DomainWarp = this.domainWarp,
+                DomainWarpScale = this.domainWarpScale,
+                DomainWarpIterations = this.domainWarpIterations,
+                NumberOfBands = this.numberOfBands,
+                BandStartOffset = this.bandStartOffset,
+                BandInterval = this.bandInterval,
+                DomainWarp2 = this.domainWarp2,
+                DomainWarpScale2 = this.domainWarpScale2,
+                DomainWarpIterations2 = this.domainWarpIterations2
             };
         }
 
-        private class ComputePipeline : System.IDisposable
+        private class ComputePipeline : IDisposable
         {
             private PlanetGenMain parent;
             private int _marchingSquaresKernel;
-            private int _sdfKernel;
-            private int _sdfWarperKernel;
+
+            // Separate kernels for the two different SDF generation methods
+            private int _sdfKernelUnsigned;
+            private int _sdfKernelSigned;
 
             private ComputeShader MarchingSquaresShader;
-            private ComputeShader SdfGeneratorShader;
-            private ComputeShader SdfDomainWarpShader;
+            private ComputeShader SdfGeneratorShader_Unsigned;
+            private ComputeShader SdfGeneratorShader_Signed;
 
-            private PingPongPipeline domainWarpPingPong;
-            private PingPongPipeline jumpFloodPingPong;
+            private PingPongPipeline fieldDomainWarpPingPong;
+            private PingPongPipeline sdfDomainWarpPingPong;
 
+            // Original surface buffers
             public ComputeBuffer SegmentsBuffer { get; private set; }
-
-            public ComputeBuffer
-                SegmentColorsBuffer { get; private set; } // Note the struct for this is 8 floats (32 bytes)
-
-            public ComputeBuffer SegmentCountBuffer { get; private set; } // To hold the segment count
+            public ComputeBuffer SegmentColorsBuffer { get; private set; }
+            public ComputeBuffer SegmentCountBuffer { get; private set; }
             public ComputeBuffer DrawArgsBuffer { get; private set; }
             public RenderTexture SdfTexture { get; private set; }
-            public RenderTexture SdfTextureWarped { get; private set; }
+
+            // Band buffers
+            public ComputeBuffer BandSegmentsBuffer { get; private set; }
+            public ComputeBuffer BandSegmentColorsBuffer { get; private set; }
+            public ComputeBuffer BandSegmentCountBuffer { get; private set; }
+            public RenderTexture BandSdfTexture { get; private set; }
+
+            private int fieldResolution;
+            private int textureResolution;
 
             public ComputePipeline(PlanetGenMain parent)
             {
                 this.parent = parent;
                 MarchingSquaresShader = Resources.Load<ComputeShader>("Compute/MarchingSquares");
-                if (MarchingSquaresShader == null) Debug.LogWarning("shader is null");
+                if (MarchingSquaresShader == null) Debug.LogWarning("MarchingSquares shader is null");
 
-                // SdfGeneratorShader = Resources.Load<ComputeShader>("Compute/GenerateSDF_raycast");
-                SdfGeneratorShader = Resources.Load<ComputeShader>("Compute/GenerateSDF_scalarSample");
-                if (SdfGeneratorShader == null) Debug.LogWarning("shader is null");
+                SdfGeneratorShader_Unsigned = Resources.Load<ComputeShader>("Compute/GenerateSDF_unsigned");
+                if (SdfGeneratorShader_Unsigned == null) Debug.LogWarning("Unsigned SDF shader is null");
 
-                SdfDomainWarpShader = Resources.Load<ComputeShader>("Compute/DomainWarpSDF");
-                if (SdfGeneratorShader == null) Debug.LogWarning("shader is null");
+                SdfGeneratorShader_Signed = Resources.Load<ComputeShader>("Compute/GenerateSDF_scalarSample");
+                if (SdfGeneratorShader_Signed == null) Debug.LogWarning("Signed SDF shader is null");
 
                 _marchingSquaresKernel = MarchingSquaresShader.FindKernel("MarchingSquares");
-                _sdfKernel = SdfGeneratorShader.FindKernel("GenerateSDF");
-                _sdfWarperKernel = SdfDomainWarpShader.FindKernel("Warp");
+
+                // Find the kernel for each SDF generation type
+                _sdfKernelUnsigned = SdfGeneratorShader_Unsigned.FindKernel("GenerateSDF_Unsigned");
+                _sdfKernelSigned = SdfGeneratorShader_Signed.FindKernel("GenerateSDF_signFromScalarSample");
             }
 
-            /// <summary>
-            /// Initializes or re-initializes all compute buffers.
-            /// Called when the field width changes or at the start.
-            /// </summary>
             public void Init(int newFieldWidth, int newTextureRes)
             {
+                fieldResolution = newFieldWidth;
+                textureResolution = newTextureRes;
+
                 InitBuffers(newFieldWidth, newTextureRes);
                 InitPingPongPipelines();
-                BindStaticResources();
-                
             }
 
             void InitBuffers(int fieldWidth, int textureRes)
@@ -229,116 +263,200 @@ namespace PlanetGen
                 DisposeBuffers();
 
                 int maxSegments = fieldWidth * fieldWidth * 2;
+                int maxBandSegments = maxSegments * parent.numberOfBands;
 
                 SegmentsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Append);
                 SegmentColorsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Append);
                 SegmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-
                 DrawArgsBuffer = new ComputeBuffer(1, sizeof(int) * 4, ComputeBufferType.IndirectArguments);
                 DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0 });
 
+                BandSegmentsBuffer = new ComputeBuffer(maxBandSegments, sizeof(float) * 4, ComputeBufferType.Append);
+                BandSegmentColorsBuffer =
+                    new ComputeBuffer(maxBandSegments, sizeof(float) * 8, ComputeBufferType.Append);
+                BandSegmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
+
                 if (SdfTexture != null) SdfTexture.Release();
-                SdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat);
-                SdfTexture.enableRandomWrite = true;
+                SdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat)
+                {
+                    enableRandomWrite = true,
+                    filterMode = FilterMode.Bilinear
+                };
                 SdfTexture.Create();
 
-                if (SdfTextureWarped != null) SdfTextureWarped.Release();
-                SdfTextureWarped = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat);
-                SdfTextureWarped.enableRandomWrite = true;
-                SdfTextureWarped.Create();
+                if (BandSdfTexture != null) BandSdfTexture.Release();
+                BandSdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBFloat)
+                {
+                    enableRandomWrite = true,
+                    filterMode = FilterMode.Bilinear
+                };
+                BandSdfTexture.Create();
             }
 
-            private ComputeResources domainWarpOutput;
             void InitPingPongPipelines()
             {
-                domainWarpPingPong = new PingPongPipeline()
+                fieldDomainWarpPingPong = new PingPongPipeline()
                     .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
                     .AddStep(Resources.Load<ComputeShader>("Compute/pingPong1/domainWarp"), "Warp", conf => conf
                         .WithIterations(() => parent.domainWarpIterations)
                         .WithFloatParam("amplitude", () => parent.domainWarp)
                         .WithFloatParam("frequency", () => parent.domainWarpScale)
                     );
-                domainWarpPingPong.Init(parent.textureRes);
+                fieldDomainWarpPingPong.Init(fieldResolution);
 
-                jumpFloodPingPong = new PingPongPipeline()
-                    .WithResources(spec =>
-                        spec.AddTexture("distanceField", RenderTextureFormat.ARGBFloat)
-                            .AddTexture("edges", RenderTextureFormat.ARGB32))
-                    .AddStep(Resources.Load<ComputeShader>("Compute/pingPong1/jumpFlood"), "JumpFlood", conf => conf
-                        .WithIterations(() => 1)
+                // This pipeline is not strictly necessary in the corrected code but is kept for consistency
+                sdfDomainWarpPingPong = new PingPongPipeline()
+                    .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
+                    .AddStep(Resources.Load<ComputeShader>("Compute/pingPong1/domainWarp"), "Warp", conf => conf
+                        .WithIterations(() => parent.domainWarpIterations2)
+                        .WithFloatParam("amplitude", () => parent.domainWarp2)
+                        .WithFloatParam("frequency", () => parent.domainWarpScale2)
                     );
-                jumpFloodPingPong.Init(parent.textureRes);
+                sdfDomainWarpPingPong.Init(textureResolution);
             }
 
-            void BindStaticResources()
-            {
-                var msShader = MarchingSquaresShader;
-                msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
-                msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
-                
-                var sdfShader = SdfGeneratorShader;
-                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
-                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
-                
-                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
-
-            }
-            
-            /// <summary>
-            /// Sets shader parameters and executes the Marching Squares compute shader.
-            /// </summary>
-            public void Dispatch(FieldGen.TextureRegistry textures, float iso, float lineWidth)
+            public void Dispatch(FieldGen.TextureRegistry textures)
             {
                 if (SegmentsBuffer == null) return;
 
-                if (domainWarpPingPong == null)
+                var input = new ComputeResources();
+                input.Textures["field"] = textures.ScalarField;
+                var domainWarpResults = fieldDomainWarpPingPong.Dispatch(input);
+
+                // STEP 1: Generate the main surface and its SIGNED Distance Field.
+                GenerateSurfaceAndSignedSDF(domainWarpResults, textures);
+
+
+                GenerateInteriorBandSegments(SdfTexture, domainWarpResults, textures);
+
+
+                // Reset for next test
+                BandSegmentsBuffer.SetCounterValue(0);
+                BandSegmentColorsBuffer.SetCounterValue(0);
+
+
+                var sdfInput = new ComputeResources();
+                sdfInput.Textures["field"] = SdfTexture;
+
+                // Check if input texture is valid
+                if (SdfTexture == null)
                 {
-                    Debug.LogError("testPingPong is null - make sure InitPingPong() was called");
+                    Debug.LogError("SdfTexture is null before ping-pong!");
+                    return;
+                }
+
+                var warpedSdfResults = sdfDomainWarpPingPong.Dispatch(sdfInput);
+
+                // Check if output is valid
+                if (warpedSdfResults == null || warpedSdfResults.Textures == null)
+                {
+                    Debug.LogError("warpedSdfResults is null or missing textures!");
+                    return;
+                }
+
+                if (!warpedSdfResults.Textures.ContainsKey("field"))
+                {
+                    Debug.Log($"Available keys: {string.Join(", ", warpedSdfResults.Textures.Keys)}");
+                    return;
+                }
+
+                var warpedTexture = warpedSdfResults.Textures["field"];
+                if (warpedTexture == null)
+                {
+                    Debug.LogError("Warped SDF texture is null!");
                     return;
                 }
 
 
-                try
+                GenerateInteriorBandSegments(warpedTexture, domainWarpResults, textures);
+                int[] countWithWarp = new int[1];
+                BandSegmentCountBuffer.GetData(countWithWarp);
+
+
+                // STEP 3: Generate an UNSIGNED SDF from the band segments for rendering.
+                GenerateBandSDF();
+            }
+
+            void GenerateSurfaceAndSignedSDF(ComputeResources domainWarpResults, FieldGen.TextureRegistry textures)
+            {
+                // Reset buffer counters
+                SegmentsBuffer.SetCounterValue(0);
+                SegmentColorsBuffer.SetCounterValue(0);
+
+                // Setup and dispatch Marching Squares shader for the main surface
+                var msShader = MarchingSquaresShader;
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
+                msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
+                msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", domainWarpResults.Textures["field"]);
+                msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
+                msShader.SetFloat("IsoValue", 0.5f);
+                msShader.SetInt("TextureWidth", fieldResolution);
+                msShader.SetInt("TextureHeight", fieldResolution);
+
+                int fieldThreadGroups = Mathf.CeilToInt(fieldResolution / 8.0f);
+                msShader.Dispatch(_marchingSquaresKernel, fieldThreadGroups, fieldThreadGroups, 1);
+
+                ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
+
+                // **CRITICAL CHANGE**: Use the SIGNED SDF generator.
+                var sdfShader = SdfGeneratorShader_Signed;
+                sdfShader.SetBuffer(_sdfKernelSigned, "_Segments", SegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernelSigned, "_SDFTexture", SdfTexture);
+                sdfShader.SetBuffer(_sdfKernelSigned, "_SegmentCount", SegmentCountBuffer);
+
+                // The signed SDF shader needs the original field and isovalue to determine inside/outside.
+                sdfShader.SetTexture(_sdfKernelSigned, "_ScalarField", domainWarpResults.Textures["field"]);
+                sdfShader.SetFloat("_IsoValue", 0.5f);
+                sdfShader.SetInt("_TextureResolution", textureResolution);
+
+                int textureThreadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
+                sdfShader.Dispatch(_sdfKernelSigned, textureThreadGroups, textureThreadGroups, 1);
+            }
+
+            void GenerateInteriorBandSegments(RenderTexture signedSdf, ComputeResources domainWarpResults,
+                FieldGen.TextureRegistry textures)
+            {
+                BandSegmentsBuffer.SetCounterValue(0);
+                BandSegmentColorsBuffer.SetCounterValue(0);
+
+                var msShader = MarchingSquaresShader;
+
+                for (int i = 0; i < parent.numberOfBands; i++)
                 {
-                    var input = new ComputeResources();
-                    input.Textures["field"] = textures.ScalarField;
+                    // Use negative iso values to trace contours INSIDE the main shape.
+                    // Ensure bandStartOffset and bandInterval are negative in the Inspector.
+                    float isoValue = parent.bandStartOffset + (i * parent.bandInterval);
 
-                    // Execute ping-pong pipeline
-                    var domainWarpResults = domainWarpPingPong.Dispatch(input);
+                    msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", BandSegmentsBuffer);
+                    msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", BandSegmentColorsBuffer);
 
-                    domainWarpPingPong.Dispatch(input);
-
-                    // Reset buffer counters
-                    SegmentsBuffer.SetCounterValue(0);
-                    SegmentColorsBuffer.SetCounterValue(0);
-
-                    // // Setup and dispatch Marching Squares shader
-                    var msShader = MarchingSquaresShader;
-                    msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", domainWarpResults.Textures["field"]);
+                    // Use the SIGNED SDF as the scalar field to find the iso-surfaces (the bands).
+                    msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", signedSdf);
+                    // Use the original color field so bands get colored correctly.
                     msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
-                    msShader.SetFloat("IsoValue", iso);
-                    msShader.SetInt("TextureWidth", parent.fieldWidth);
-                    msShader.SetInt("TextureHeight", parent.fieldWidth);
 
-                    int threadGroups = Mathf.CeilToInt(parent.fieldWidth / 8.0f);
+                    msShader.SetFloat("IsoValue", isoValue);
+                    msShader.SetInt("TextureWidth", textureResolution); // Marching squares now runs on the SDF texture
+                    msShader.SetInt("TextureHeight", textureResolution);
+
+                    int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
                     msShader.Dispatch(_marchingSquaresKernel, threadGroups, threadGroups, 1);
-
-                    // Copy segment count for later use
-                    ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
-
-                    // Setup and dispatch SDF Generator shader
-                    var sdfShader = SdfGeneratorShader;
-                    sdfShader.SetTexture(_sdfKernel, "_ScalarField", domainWarpResults.Textures["field"]);
-                    sdfShader.SetFloat("_IsoValue", iso);
-                    sdfShader.SetInt("_FieldResolution", parent.fieldWidth);
-                    sdfShader.SetInt("_TextureResolution", parent.textureRes);
-
-                    int sdfThreadGroups = Mathf.CeilToInt(parent.textureRes / 8.0f);
-                    sdfShader.Dispatch(_sdfKernel, sdfThreadGroups, sdfThreadGroups, 1);
                 }
-                finally
-                {
-                }
+
+                ComputeBuffer.CopyCount(BandSegmentsBuffer, BandSegmentCountBuffer, 0);
+            }
+
+            void GenerateBandSDF()
+            {
+                // Generate an UNSIGNED SDF from the collected band segments. We don't need a sign for the bands themselves.
+                var sdfShader = SdfGeneratorShader_Unsigned;
+                sdfShader.SetBuffer(_sdfKernelUnsigned, "_Segments", BandSegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernelUnsigned, "_SDFTexture", BandSdfTexture);
+                sdfShader.SetBuffer(_sdfKernelUnsigned, "_SegmentCount", BandSegmentCountBuffer);
+                sdfShader.SetInt("_TextureResolution", textureResolution);
+
+                int textureThreadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
+                sdfShader.Dispatch(_sdfKernelUnsigned, textureThreadGroups, textureThreadGroups, 1);
             }
 
             void DisposeBuffers()
@@ -348,19 +466,49 @@ namespace PlanetGen
                 DrawArgsBuffer?.Dispose();
                 SegmentCountBuffer?.Dispose();
                 if (SdfTexture != null) SdfTexture.Release();
+
+                BandSegmentsBuffer?.Dispose();
+                BandSegmentColorsBuffer?.Dispose();
+                BandSegmentCountBuffer?.Dispose();
+                if (BandSdfTexture != null) BandSdfTexture.Release();
             }
 
             public void Dispose()
             {
                 DisposeBuffers();
+                fieldDomainWarpPingPong?.Dispose();
+                sdfDomainWarpPingPong?.Dispose();
             }
         }
 
         #region Debug
 
-        /// <summary>
-        /// Debug draws the marching squares segments as lines in the scene view
-        /// </summary>
+        public void DebugBandGeneration()
+        {
+            if (computePipeline?.BandSegmentCountBuffer == null)
+            {
+                Debug.Log("Band segment count buffer is null");
+                return;
+            }
+
+            // Get the actual number of band segments generated
+            int[] bandSegmentCount = new int[1];
+            computePipeline.BandSegmentCountBuffer.GetData(bandSegmentCount);
+
+            Debug.Log($"Generated {bandSegmentCount[0]} band segments with {numberOfBands} bands");
+            Debug.Log($"Band start offset: {bandStartOffset}, interval: {bandInterval}");
+
+            // Check if we have any band segments to draw
+            if (bandSegmentCount[0] > 0)
+            {
+                Debug.Log("Band segments exist - check shader parameters");
+            }
+            else
+            {
+                Debug.Log("No band segments generated - check iso values or SDF");
+            }
+        }
+
         public void DebugDrawMarchingSquaresBuffer()
         {
             if (!enableDebugDraw || computePipeline?.SegmentsBuffer == null ||
@@ -388,7 +536,6 @@ namespace PlanetGen
                 Vector4 segment = segments[i];
 
                 // Convert from normalized texture coordinates to world positions
-                // Assuming your field spans from -fieldWidth/2 to +fieldWidth/2 in world units
                 Vector3 start = new Vector3(
                     (segment.x - 0.5f),
                     (segment.y - 0.5f),
