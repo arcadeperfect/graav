@@ -204,11 +204,11 @@ namespace PlanetGen
             private int _marchingSquaresKernel;
 
             // Separate kernels for the two different SDF generation methods
-            private int _sdfKernelUnsigned;
-            private int _sdfKernelSigned;
+            // private int _sdfKernelUnsigned;
+            private int _sdfKernel;
 
             private ComputeShader MarchingSquaresShader;
-            private ComputeShader SdfGeneratorShader_Unsigned;
+            // private ComputeShader SdfGeneratorShader_Unsigned;
             private ComputeShader SdfGeneratorShader_Signed;
 
             private PingPongPipeline fieldDomainWarpPingPong;
@@ -236,8 +236,8 @@ namespace PlanetGen
                 MarchingSquaresShader = Resources.Load<ComputeShader>("Compute/MarchingSquares");
                 if (MarchingSquaresShader == null) Debug.LogWarning("MarchingSquares shader is null");
 
-                SdfGeneratorShader_Unsigned = Resources.Load<ComputeShader>("Compute/GenerateSDF_unsigned");
-                if (SdfGeneratorShader_Unsigned == null) Debug.LogWarning("Unsigned SDF shader is null");
+                // SdfGeneratorShader_Unsigned = Resources.Load<ComputeShader>("Compute/GenerateSDF_unsigned");
+                // if (SdfGeneratorShader_Unsigned == null) Debug.LogWarning("Unsigned SDF shader is null");
 
                 SdfGeneratorShader_Signed = Resources.Load<ComputeShader>("Compute/GenerateSDF_scalarSample");
                 if (SdfGeneratorShader_Signed == null) Debug.LogWarning("Signed SDF shader is null");
@@ -245,8 +245,8 @@ namespace PlanetGen
                 _marchingSquaresKernel = MarchingSquaresShader.FindKernel("MarchingSquares");
 
                 // Find the kernel for each SDF generation type
-                _sdfKernelUnsigned = SdfGeneratorShader_Unsigned.FindKernel("GenerateSDF_Unsigned");
-                _sdfKernelSigned = SdfGeneratorShader_Signed.FindKernel("GenerateSDF_signFromScalarSample");
+                // _sdfKernelUnsigned = SdfGeneratorShader_Signed.FindKernel("GenerateSDF_Unsigned");
+                _sdfKernel = SdfGeneratorShader_Signed.FindKernel("GenerateSDF");
             }
 
             public void Init(int newFieldWidth, int newTextureRes)
@@ -324,7 +324,7 @@ namespace PlanetGen
                 var domainWarpResults = fieldDomainWarpPingPong.Dispatch(input);
 
                 // STEP 1: Generate the main surface and its SIGNED Distance Field.
-                GenerateSurfaceAndSignedSDF(domainWarpResults, textures);
+                GenerateSurfaceAndSDF(domainWarpResults, textures);
 
 
                 GenerateInteriorBandSegments(SdfTexture, domainWarpResults, textures);
@@ -377,7 +377,7 @@ namespace PlanetGen
                 GenerateBandSDF();
             }
 
-            void GenerateSurfaceAndSignedSDF(ComputeResources domainWarpResults, FieldGen.TextureRegistry textures)
+            void GenerateSurfaceAndSDF(ComputeResources domainWarpResults, FieldGen.TextureRegistry textures)
             {
                 // Reset buffer counters
                 SegmentsBuffer.SetCounterValue(0);
@@ -400,17 +400,17 @@ namespace PlanetGen
 
                 // **CRITICAL CHANGE**: Use the SIGNED SDF generator.
                 var sdfShader = SdfGeneratorShader_Signed;
-                sdfShader.SetBuffer(_sdfKernelSigned, "_Segments", SegmentsBuffer);
-                sdfShader.SetTexture(_sdfKernelSigned, "_SDFTexture", SdfTexture);
-                sdfShader.SetBuffer(_sdfKernelSigned, "_SegmentCount", SegmentCountBuffer);
+                sdfShader.SetBuffer(_sdfKernel, "_Segments", SegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", SdfTexture);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", SegmentCountBuffer);
 
                 // The signed SDF shader needs the original field and isovalue to determine inside/outside.
-                sdfShader.SetTexture(_sdfKernelSigned, "_ScalarField", domainWarpResults.Textures["field"]);
+                sdfShader.SetTexture(_sdfKernel, "_ScalarField", domainWarpResults.Textures["field"]);
                 sdfShader.SetFloat("_IsoValue", 0.5f);
                 sdfShader.SetInt("_TextureResolution", textureResolution);
 
                 int textureThreadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-                sdfShader.Dispatch(_sdfKernelSigned, textureThreadGroups, textureThreadGroups, 1);
+                sdfShader.Dispatch(_sdfKernel, textureThreadGroups, textureThreadGroups, 1);
             }
 
             void GenerateInteriorBandSegments(RenderTexture signedSdf, ComputeResources domainWarpResults,
@@ -448,15 +448,14 @@ namespace PlanetGen
 
             void GenerateBandSDF()
             {
-                // Generate an UNSIGNED SDF from the collected band segments. We don't need a sign for the bands themselves.
-                var sdfShader = SdfGeneratorShader_Unsigned;
-                sdfShader.SetBuffer(_sdfKernelUnsigned, "_Segments", BandSegmentsBuffer);
-                sdfShader.SetTexture(_sdfKernelUnsigned, "_SDFTexture", BandSdfTexture);
-                sdfShader.SetBuffer(_sdfKernelUnsigned, "_SegmentCount", BandSegmentCountBuffer);
+                var sdfShader = SdfGeneratorShader_Signed;
+                sdfShader.SetBuffer(_sdfKernel, "_Segments", BandSegmentsBuffer);
+                sdfShader.SetTexture(_sdfKernel, "_SDFTexture", BandSdfTexture);
+                sdfShader.SetBuffer(_sdfKernel, "_SegmentCount", BandSegmentCountBuffer);
                 sdfShader.SetInt("_TextureResolution", textureResolution);
 
                 int textureThreadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-                sdfShader.Dispatch(_sdfKernelUnsigned, textureThreadGroups, textureThreadGroups, 1);
+                sdfShader.Dispatch(_sdfKernel, textureThreadGroups, textureThreadGroups, 1);
             }
 
             void DisposeBuffers()
