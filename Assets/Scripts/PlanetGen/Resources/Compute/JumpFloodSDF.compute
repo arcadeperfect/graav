@@ -1,0 +1,208 @@
+﻿#pragma kernel SeedGeneration
+#pragma kernel JumpFlood
+#pragma kernel FinalizeSDF
+
+// Shared data structures
+StructuredBuffer<float4> _Segments;
+StructuredBuffer<int> _SegmentCount;
+uint _TextureResolution;
+
+// Seed generation outputs
+RWTexture2D<float4> _SeedTexture; // RG = closest point world pos, B = segment ID, A = distance
+
+// Jump flood ping-pong textures
+Texture2D<float4> _InputTexture;
+RWTexture2D<float4> _OutputTexture;
+int _JumpDistance;
+
+// Final SDF outputs
+Texture2D<float4> _JFAResult;
+RWTexture2D<float4> _SDFTexture;
+
+// Optional for signed SDF
+Texture2D<float> _ScalarField;
+SamplerState sampler_ScalarField;
+float _IsoValue;
+bool _OutputUnsigned;
+bool _HasScalarField;
+
+// Helper function to find closest point on line segment
+float2 ClosestPointOnSegment(float2 inputPoint, float2 a, float2 b, out float distance)
+{
+    float2 ab = b - a;
+    float2 ap = inputPoint - a;
+    float t = saturate(dot(ap, ab) / dot(ab, ab));
+    float2 closest = a + t * ab;
+    distance = length(inputPoint - closest);
+    return closest;
+}
+
+[numthreads(8,8,1)]
+void SeedGeneration(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+    
+    int segmentCount = _SegmentCount[0];
+    
+    // Convert pixel to world space [-1, 1]
+    float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+    
+    float minDistance = 1e9;
+    float2 closestPoint = float2(0, 0);
+    uint closestSegmentID = 0;
+    
+    // Find closest point on any segment
+    for (uint i = 0; i < (uint)segmentCount; i++)
+    {
+        float2 segmentStart = _Segments[i].xy;
+        float2 segmentEnd = _Segments[i].zw;
+        
+        float dist;
+        float2 closest = ClosestPointOnSegment(worldPos, segmentStart, segmentEnd, dist);
+        
+        if (dist < minDistance)
+        {
+            minDistance = dist;
+            closestPoint = closest;
+            closestSegmentID = i;
+        }
+    }
+    
+    // Store seed data: closest point in RG, segment ID in B, distance in A
+    _SeedTexture[id.xy] = float4(closestPoint.x, closestPoint.y, (float)closestSegmentID, minDistance);
+}
+
+[numthreads(8,8,1)]
+void JumpFlood(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+    
+    float2 currentPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+    float4 bestSeed = _InputTexture[id.xy];
+    float bestDistance = bestSeed.a;
+    
+    // If we already have a valid seed, calculate its actual distance to current pixel
+    if (bestDistance < 1e8)
+    {
+        float2 seedPos = bestSeed.xy;
+        bestDistance = length(currentPos - seedPos);
+    }
+    
+    // Check 9 neighbors at jump distance
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int2 samplePos = int2(id.xy) + int2(dx, dy) * _JumpDistance;
+            
+            // Clamp to texture bounds
+            if (samplePos.x >= 0 && samplePos.x < (int)_TextureResolution &&
+                samplePos.y >= 0 && samplePos.y < (int)_TextureResolution)
+            {
+                float4 neighborSeed = _InputTexture[samplePos];
+                
+                // Skip invalid seeds (distance >= 1e8 means no seed)
+                if (neighborSeed.a < 1e8)
+                {
+                    float2 seedPos = neighborSeed.xy;
+                    float dist = length(currentPos - seedPos);
+                    
+                    if (dist < bestDistance)
+                    {
+                        bestDistance = dist;
+                        bestSeed = float4(seedPos.x, seedPos.y, neighborSeed.z, dist);
+                    }
+                }
+            }
+        }
+    }
+    
+    _OutputTexture[id.xy] = bestSeed;
+}
+
+[numthreads(8,8,1)]
+void FinalizeSDF(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+    
+    float4 jfaData = _JFAResult[id.xy];
+    float distance = jfaData.a; // Always unsigned from JFA
+    float segmentID = jfaData.z;
+    
+    if (_OutputUnsigned)
+    {
+        // Surface SDF: unsigned distance in R, always positive sign in G
+        _SDFTexture[id.xy] = float4(distance, 1.0f, segmentID, 0);
+    }
+    else if (_HasScalarField)
+    {
+        // Band SDF: unsigned distance in R, computed sign in G
+        float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+        float2 fieldUV = (worldPos + 1.0) * 0.5; // Convert [-1,1] to [0,1]
+        float fieldValue = _ScalarField.SampleLevel(sampler_ScalarField, fieldUV, 0).r;
+        
+        float sign = (fieldValue < _IsoValue) ? -1.0f : 1.0f;
+        
+        // Format: R = unsigned distance, G = sign, B = segment ID, A = unused
+        _SDFTexture[id.xy] = float4(distance, sign, segmentID, 0);
+    }
+    else
+    {
+        // Fallback: unsigned distance, positive sign
+        _SDFTexture[id.xy] = float4(distance, 1.0f, segmentID, 0);
+    }
+}
+
+// Add this new kernel to your existing JumpFloodSDF.compute file.
+#pragma kernel SeedFromScalarField
+
+// // Input Texture from the noise generation stage
+// Texture2D<float> _ScalarField;
+//
+// // This is the output texture that will be the input for the JumpFlood kernel
+// RWTexture2D<float4> _SeedTexture;
+//
+// // Parameters
+// uint _TextureResolution;
+// float _IsoValue;
+
+[numthreads(8,8,1)]
+void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
+{
+    // Boundary check
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+
+    // We need to check a 2x2 group of pixels to reliably find boundaries.
+    // Load the value at the current pixel and its right/down neighbors.
+    // Using Load() is important here as it fetches from a specific integer texel coordinate.
+    float val_tl = _ScalarField.Load(int3(id.xy, 0)).r; // Top-Left (current pixel)
+    float val_tr = _ScalarField.Load(int3(id.x + 1, id.y, 0)).r; // Top-Right
+    float val_bl = _ScalarField.Load(int3(id.x, id.y + 1, 0)).r; // Bottom-Left
+
+    bool inside_tl = val_tl < _IsoValue;
+    bool inside_tr = val_tr < _IsoValue;
+    bool inside_bl = val_bl < _IsoValue;
+
+    // If the inside/outside state is different between the pixel and its neighbors,
+    // then this pixel lies on the boundary of the shape.
+    if (inside_tl != inside_tr || inside_tl != inside_bl)
+    {
+        // This is a boundary pixel, so its distance to the surface is 0.
+        // We define its "seed" as its own position in world space [-1, 1].
+        // The JFA will propagate this information.
+        float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+
+        // Store: XY = closest point pos, Z=unused, W=distance
+        _SeedTexture[id.xy] = float4(worldPos.x, worldPos.y, 0, 0);
+    }
+    else
+    {
+        // This is not a boundary pixel. It has no seed.
+        // We give it an "infinite" distance so it will be overwritten by the first valid seed.
+        _SeedTexture[id.xy] = float4(0, 0, 0, 1e9);
+    }
+}
