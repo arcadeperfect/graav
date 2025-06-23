@@ -169,40 +169,86 @@ void FinalizeSDF(uint3 id : SV_DispatchThreadID)
 // uint _TextureResolution;
 // float _IsoValue;
 
+// [numthreads(8,8,1)]
+// void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
+// {
+//     // Boundary check
+//     if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+//         return;
+//
+//     // We need to check a 2x2 group of pixels to reliably find boundaries.
+//     // Load the value at the current pixel and its right/down neighbors.
+//     // Using Load() is important here as it fetches from a specific integer texel coordinate.
+//     float val_tl = _ScalarField.Load(int3(id.xy, 0)).r; // Top-Left (current pixel)
+//     float val_tr = _ScalarField.Load(int3(id.x + 1, id.y, 0)).r; // Top-Right
+//     float val_bl = _ScalarField.Load(int3(id.x, id.y + 1, 0)).r; // Bottom-Left
+//
+//     bool inside_tl = val_tl < _IsoValue;
+//     bool inside_tr = val_tr < _IsoValue;
+//     bool inside_bl = val_bl < _IsoValue;
+//
+//     // If the inside/outside state is different between the pixel and its neighbors,
+//     // then this pixel lies on the boundary of the shape.
+//     if (inside_tl != inside_tr || inside_tl != inside_bl)
+//     {
+//         // This is a boundary pixel, so its distance to the surface is 0.
+//         // We define its "seed" as its own position in world space [-1, 1].
+//         // The JFA will propagate this information.
+//         float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+//
+//         // Store: XY = closest point pos, Z=unused, W=distance
+//         _SeedTexture[id.xy] = float4(worldPos.x, worldPos.y, 0, 0);
+//     }
+//     else
+//     {
+//         // This is not a boundary pixel. It has no seed.
+//         // We give it an "infinite" distance so it will be overwritten by the first valid seed.
+//         _SeedTexture[id.xy] = float4(0, 0, 0, 1e9);
+//     }
+// }
+
+// Replace the existing SeedFromScalarField kernel with this corrected version
+
 [numthreads(8,8,1)]
 void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
 {
-    // Boundary check
+    // Boundary check for the high-resolution texture we are writing to
     if (id.x >= _TextureResolution || id.y >= _TextureResolution)
         return;
 
-    // We need to check a 2x2 group of pixels to reliably find boundaries.
-    // Load the value at the current pixel and its right/down neighbors.
-    // Using Load() is important here as it fetches from a specific integer texel coordinate.
-    float val_tl = _ScalarField.Load(int3(id.xy, 0)).r; // Top-Left (current pixel)
-    float val_tr = _ScalarField.Load(int3(id.x + 1, id.y, 0)).r; // Top-Right
-    float val_bl = _ScalarField.Load(int3(id.x, id.y + 1, 0)).r; // Bottom-Left
+    // Calculate the normalized UV coordinate [0,1] for the current thread
+    float2 uv = (float2(id.xy) + 0.5f) / float(_TextureResolution);
+
+    // To find boundaries, we still need to compare neighbors.
+    // We calculate the UV step size (the size of one pixel in UV space)
+    // for the source (_ScalarField) texture.
+    float2 scalarTexelSize;
+    uint scalarWidth, scalarHeight;
+    _ScalarField.GetDimensions(scalarWidth, scalarHeight);
+    scalarTexelSize = 1.0 / float2(scalarWidth, scalarHeight);
+
+    // Sample the scalar field at the current UV and its neighbors
+    float val_tl = _ScalarField.SampleLevel(sampler_ScalarField, uv, 0).r;
+    float val_tr = _ScalarField.SampleLevel(sampler_ScalarField, uv + float2(scalarTexelSize.x, 0), 0).r;
+    float val_bl = _ScalarField.SampleLevel(sampler_ScalarField, uv + float2(0, scalarTexelSize.y), 0).r;
 
     bool inside_tl = val_tl < _IsoValue;
     bool inside_tr = val_tr < _IsoValue;
     bool inside_bl = val_bl < _IsoValue;
 
-    // If the inside/outside state is different between the pixel and its neighbors,
-    // then this pixel lies on the boundary of the shape.
+    // If the inside/outside state is different, this pixel is on the boundary.
     if (inside_tl != inside_tr || inside_tl != inside_bl)
     {
-        // This is a boundary pixel, so its distance to the surface is 0.
-        // We define its "seed" as its own position in world space [-1, 1].
-        // The JFA will propagate this information.
-        float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+        // This is a boundary pixel. Its seed is its own position.
+        // Convert the high-res integer ID to normalized UV, then to world space [-1, 1].
+        float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0 - 1.0;
 
-        // Store: XY = closest point pos, Z=unused, W=distance
+        // Store: XY = closest point pos, Z=unused, W=distance (0 for a seed)
         _SeedTexture[id.xy] = float4(worldPos.x, worldPos.y, 0, 0);
     }
     else
     {
-        // This is not a boundary pixel. It has no seed.
-        // We give it an "infinite" distance so it will be overwritten by the first valid seed.
+        // Not a boundary pixel. Give it "infinite" distance.
         _SeedTexture[id.xy] = float4(0, 0, 0, 1e9);
     }
 }
