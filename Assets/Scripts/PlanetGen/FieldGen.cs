@@ -188,12 +188,12 @@ namespace PlanetGen
 
     public class FieldGen: IDisposable
     {
-        public struct  TextureRegistry: IDisposable
+        public struct  FieldData: IDisposable
         {
             public RenderTexture ScalarField;
             public RenderTexture Colors;
 
-            public TextureRegistry(int texture_width)
+            public FieldData(int texture_width)
             {
                 ScalarField = new RenderTexture(texture_width, texture_width, 0, RenderTextureFormat.RFloat) // Use RFloat for single-channel data
                 {
@@ -243,13 +243,13 @@ namespace PlanetGen
         /// <param name="frequency">Frequency of the noise.</param>
         /// <param name="tex_width">The width and height of the textures to generate.</param>
         /// <param name="blurIterations">The number of times to apply the blur filter. 0 means no blur.</param>
-        public void GetTex(ref TextureRegistry inTEX, float seed, float radius, float amplitude, float frequency, int tex_width, int blurIterations = 0)
+        public void GetTex(ref FieldData inTEX, float seed, float radius, float amplitude, float frequency, int tex_width, int blurIterations = 0)
         {
             // Reinitialize textures only if the width has changed or they don't exist
             if (inTEX.ScalarField == null || tex_width != inTEX.ScalarField.width)
             {
                 inTEX.Dispose(); // Dispose of existing textures if they exist
-                inTEX = new TextureRegistry(tex_width); // Create new textures
+                inTEX = new FieldData(tex_width); // Create new textures
             }
 
             // Allocate native arrays for texture data

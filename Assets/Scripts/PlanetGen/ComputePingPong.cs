@@ -1197,7 +1197,8 @@ namespace PlanetGen
                 var renderTexture = new RenderTexture(width, width, 0, format)
                 {
                     enableRandomWrite = true,
-                    filterMode = FilterMode.Point
+                    // filterMode = FilterMode.Point
+                    filterMode = FilterMode.Trilinear
                 };
                 renderTexture.Create();
                 resources.Textures[texture.Key] = renderTexture;

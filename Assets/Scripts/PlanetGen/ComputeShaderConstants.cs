@@ -1,4 +1,6 @@
-﻿namespace PlanetGen
+﻿using UnityEngine;
+
+namespace PlanetGen
 {
     public static class ComputeShaderConstants
     {
@@ -31,6 +33,24 @@
             public static class Kernels
             {
                 public const string Warp = "Warp";
+            }
+        }
+        
+        public static class GaussianBlurCompute
+        {
+            public const string Path = "Compute/PingPng1/GaussianBlur";
+            public static class Kernels
+            {
+                public const string GaussianBlur = "GaussianBlur";
+            }
+
+            public static ComputeShader Get()
+            {
+                return Resources.Load<ComputeShader>("Compute/pingPong1/gaussianBlur");
+            }
+            public static int GetKernel()
+            {
+                return Get().FindKernel(GaussianBlurCompute.Kernels.GaussianBlur);
             }
         }
     }

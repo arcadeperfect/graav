@@ -1,0 +1,66 @@
+﻿#pragma kernel GaussianBlur
+
+Texture2D<float4> field_in;
+RWTexture2D<float4> field_out;
+float blur;  // Blur radius/strength
+
+
+// Gaussian weights for 5x5 kernel (sigma ≈ 1.0)
+static const float weights[25] = {
+    0.003765, 0.015019, 0.023792, 0.015019, 0.003765,
+    0.015019, 0.059912, 0.094907, 0.059912, 0.015019,
+    0.023792, 0.094907, 0.150342, 0.094907, 0.023792,
+    0.015019, 0.059912, 0.094907, 0.059912, 0.015019,
+    0.003765, 0.015019, 0.023792, 0.015019, 0.003765
+};
+
+// Kernel offsets for 5x5 sampling pattern
+static const int2 offsets[25] = {
+    int2(-2, -2), int2(-1, -2), int2(0, -2), int2(1, -2), int2(2, -2),
+    int2(-2, -1), int2(-1, -1), int2(0, -1), int2(1, -1), int2(2, -1),
+    int2(-2,  0), int2(-1,  0), int2(0,  0), int2(1,  0), int2(2,  0),
+    int2(-2,  1), int2(-1,  1), int2(0,  1), int2(1,  1), int2(2,  1),
+    int2(-2,  2), int2(-1,  2), int2(0,  2), int2(1,  2), int2(2,  2)
+};
+
+[numthreads(8, 8, 1)]
+void GaussianBlur(uint3 id: SV_DispatchThreadID)
+{
+    // Get texture dimensions for bounds checking
+    uint2 texSize;
+    field_in.GetDimensions(texSize.x, texSize.y);
+    
+    // Early exit if amplitude is 0 - just copy directly
+    if (blur == 0.0)
+    {
+        field_out[id.xy] = field_in[id.xy];
+        return;
+    }
+    
+    // Scale the blur radius based on amplitude
+    float blurRadius = blur;
+    
+    float4 blurredColor = float4(0, 0, 0, 0);
+    float totalWeight = 0.0;
+    
+    // Sample using 5x5 Gaussian kernel
+    for (int i = 0; i < 25; i++)
+    {
+        // Scale offset by blur radius
+        int2 sampleOffset = int2(offsets[i] * blurRadius);
+        int2 samplePos = int2(id.xy) + sampleOffset;
+        
+        // Clamp to texture bounds
+        samplePos = clamp(samplePos, 0, int2(texSize) - 1);
+        
+        // Sample and accumulate
+        float4 sampleColor = field_in[samplePos];
+        float weight = weights[i];
+        
+        blurredColor += sampleColor * weight;
+        totalWeight += weight;
+    }
+    
+    // Normalize and output
+    field_out[id.xy] = blurredColor / totalWeight;
+}

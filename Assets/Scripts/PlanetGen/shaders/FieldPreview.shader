@@ -1,9 +1,12 @@
-﻿Shader "PlanetGen/UnlitMultiTex"
+﻿Shader "PlanetGen/FieldPreview"
 {
     Properties
     {
         _FieldTex ("Texture", 2D) = "white" {}
         _ColorTex ("Texture", 2D) = "white" {}
+        _Mode("Display Mode", Int) = 0
+        _Alpha("Opacity", Float) = 1
+        
     }
     
     SubShader
@@ -52,13 +55,16 @@
             CBUFFER_START(UnityPerMaterial)
                 float4 _FieldTex_ST;
                 float4 _ColorTex_ST;
+                int _Mode;
+                float _Alpha;
             CBUFFER_END
-            
+
+
             Varyings vert(Attributes input)
             {
                 Varyings output;
                 output.positionHCS = TransformObjectToHClip(input.positionOS.xyz);
-                output.uv = TRANSFORM_TEX(input.uv, _FieldTex);
+                output.uv = input.uv; // Use raw UVs for debugging
                 return output;
             }
             
@@ -67,7 +73,17 @@
                 // Sample the texture and return raw RGBA values
                 half4 field = SAMPLE_TEXTURE2D(_FieldTex, sampler_FieldTex, input.uv);
                 half4 col = SAMPLE_TEXTURE2D(_ColorTex, sampler_ColorTex, input.uv);
-                return col * field;
+
+                switch (_Mode)
+                {
+                    case 0:
+                        return field * _Alpha; // Return the raw field texture color
+                    case 1:
+                        return col * _Alpha; // Return the color texture color
+                    case 2:
+                        return field.r * col * _Alpha; // Return the color texture color modulated by the red channel of the field
+                }
+                return half4(0, 0, 0, 0); // Default to transparent if mode is invalid
             }
             ENDHLSL
         }
