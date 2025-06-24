@@ -53,7 +53,9 @@ void Warp(uint3 id: SV_DispatchThreadID)
         field_out[id.xy] = field_in[id.xy];
         return;
     }
-    
+
+    float magMult = -field_in[id.xy].r;
+    amplitude *= magMult;
     // Generate noise coordinates using frequency for scaling
     float3 noiseCoord = float3(id.xy * frequency * 0.001, 1);
 

@@ -424,23 +424,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fd3f28a0d1bb884c8459f79e191cb36, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  fieldWidth: 512
+  fieldWidth: 1024
   radius: 0.442
   amplitude: 2
   frequency: 1.89
-  blur: 0
-  iso: 0.5
-  textureRes: 512
-  lineWidth: 0.041
-  bandSpacing: 1
-  maxDistance: 0.2
+  blur: 5
   domainWarp: 0
   domainWarpScale: 0
+  domainWarpIterations: 1
+  textureRes: 1024
+  lineWidth: 0.475
+  bandSpacing: 1
+  domainWarp2: 0
+  domainWarpScale2: 0
+  domainWarpIterations2: 1
+  numberOfBands: 5
+  bandStartOffset: -0.12
+  bandInterval: -0.1
   enableDebugDraw: 0
   debugLineColor: {r: 1, g: 0, b: 0, a: 1}
   debugLineDuration: 0.1
-  maxDebugSegments: 1000
-  sdfRenderer: {fileID: 1371464780}
+  maxDebugSegments: 10000
+  computeConstantly: 1
   fieldRenderer: {fileID: 2142337121}
   resultRenderer: {fileID: 2104903705}
 --- !u!1 &832575517

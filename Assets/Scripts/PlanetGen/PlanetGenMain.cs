@@ -115,13 +115,14 @@ namespace PlanetGen
         {
             if (cachedFieldParams.HasChanged(this))
             {
+                print("RegenField called with changed params");
                 fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, fieldWidth, blur);
                 computePipeline.Init(fieldWidth, textureRes);
                 fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarField);
                 fieldRenderer.material.SetTexture("_ColorTex", field_textures.Colors);
                 UpdateCachedParams();
             }
-
+            print("RegenField called, calling RegenCompute");
             RegenCompute();
         }
 
@@ -179,7 +180,7 @@ namespace PlanetGen
 
             if (enableDebugDraw)
             {
-                // DebugDrawMarchingSquaresBuffer();
+                DebugDrawMarchingSquaresBuffer();
             }
         }
 
@@ -384,7 +385,8 @@ namespace PlanetGen
 
                 // JFA from scalar field
                 var scalarFieldForSDF = domainWarpResults.Textures["field"];
-                jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f); // Simplified call
+                // jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f); // Simplified call
+                jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
                 jumpFlooder1.RunJumpFlood();
                 jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
             }
