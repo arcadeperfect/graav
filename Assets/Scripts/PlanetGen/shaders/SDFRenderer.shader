@@ -75,21 +75,35 @@
                 output.uv = TRANSFORM_TEX(input.uv, _SDFTexture);
                 return output;
             }
-            
+
             half4 frag(Varyings input) : SV_Target
             {
+                // _LineWidth *= 0.1;
+                //
+                // half4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_linear_clamp, input.uv);
+                // float distance = mainSdfData.r;
+                //
+                // // Use the rate of change of distance for proper antialiasing
+                // float pixelDistance = fwidth(distance);
+                //
+                // // Create hard edge with minimal antialiasing based on pixel size
+                // float alpha = 1.0 - smoothstep(-pixelDistance * 0.5, pixelDistance * 0.5, distance - _LineWidth);
+                //
+                // return half4(1, 1, 1, alpha);
+
                 // 1. Sample the base color from the original noise field
                 half4 fieldColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_linear_clamp, input.uv);
 
                 // --- MAIN OUTLINE RENDERING (Simplified gradient compensation) ---
                 // We use the ORIGINAL, un-warped SDF so the main outline never changes.
                 half4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_linear_clamp, input.uv);
-                float mainSignedDist = mainSdfData.r * mainSdfData.g;
+                // float mainSignedDist = mainSdfData.r * mainSdfData.g;
 
                 // Simplified approach: use fwidth for anti-aliasing but keep _LineWidth as direct threshold
-               float mainGrad = max(fwidth(mainSignedDist), 1e-6);
+                float mainGrad = max(fwidth(mainSdfData.r), 1e-6);
                 float adjustedLineWidth = _LineWidth * 0.01;
-                float outlineAlpha = 1.0 - smoothstep(adjustedLineWidth, adjustedLineWidth + mainGrad, abs(mainSignedDist));
+                float outlineAlpha = 1.0 - smoothstep(adjustedLineWidth, adjustedLineWidth + mainGrad,
+                                                      abs(mainSdfData.r));
 
                 // --- PROCEDURAL BAND RENDERING (With gradient compensation) ---
                 half4 warpedSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);

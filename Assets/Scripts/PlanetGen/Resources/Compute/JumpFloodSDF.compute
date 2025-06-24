@@ -1,6 +1,7 @@
-﻿#pragma kernel SeedGeneration
+﻿#pragma kernel SeedFromSegments
 #pragma kernel JumpFlood
 #pragma kernel FinalizeSDF
+#pragma kernel SeedFromScalarField
 
 // Shared data structures
 StructuredBuffer<float4> _Segments;
@@ -37,41 +38,7 @@ float2 ClosestPointOnSegment(float2 inputPoint, float2 a, float2 b, out float di
     return closest;
 }
 
-[numthreads(8,8,1)]
-void SeedGeneration(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
-        return;
-    
-    int segmentCount = _SegmentCount[0];
-    
-    // Convert pixel to world space [-1, 1]
-    float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
-    
-    float minDistance = 1e9;
-    float2 closestPoint = float2(0, 0);
-    uint closestSegmentID = 0;
-    
-    // Find closest point on any segment
-    for (uint i = 0; i < (uint)segmentCount; i++)
-    {
-        float2 segmentStart = _Segments[i].xy;
-        float2 segmentEnd = _Segments[i].zw;
-        
-        float dist;
-        float2 closest = ClosestPointOnSegment(worldPos, segmentStart, segmentEnd, dist);
-        
-        if (dist < minDistance)
-        {
-            minDistance = dist;
-            closestPoint = closest;
-            closestSegmentID = i;
-        }
-    }
-    
-    // Store seed data: closest point in RG, segment ID in B, distance in A
-    _SeedTexture[id.xy] = float4(closestPoint.x, closestPoint.y, (float)closestSegmentID, minDistance);
-}
+
 
 [numthreads(8,8,1)]
 void JumpFlood(uint3 id : SV_DispatchThreadID)
@@ -156,58 +123,42 @@ void FinalizeSDF(uint3 id : SV_DispatchThreadID)
     }
 }
 
-// Add this new kernel to your existing JumpFloodSDF.compute file.
-#pragma kernel SeedFromScalarField
+[numthreads(8,8,1)]
+void SeedFromSegments(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+    
+    int segmentCount = _SegmentCount[0];
+    
+    // Convert pixel to world space [-1, 1]
+    float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
+    
+    float minDistance = 1e9;
+    float2 closestPoint = float2(0, 0);
+    uint closestSegmentID = 0;
+    
+    // Find closest point on any segment
+    for (uint i = 0; i < (uint)segmentCount; i++)
+    {
+        float2 segmentStart = _Segments[i].xy;
+        float2 segmentEnd = _Segments[i].zw;
+        
+        float dist;
+        float2 closest = ClosestPointOnSegment(worldPos, segmentStart, segmentEnd, dist);
+        
+        if (dist < minDistance)
+        {
+            minDistance = dist;
+            closestPoint = closest;
+            closestSegmentID = i;
+        }
+    }
+    
+    // Store seed data: closest point in RG, segment ID in B, distance in A
+    _SeedTexture[id.xy] = float4(closestPoint.x, closestPoint.y, (float)closestSegmentID, minDistance);
+}
 
-// // Input Texture from the noise generation stage
-// Texture2D<float> _ScalarField;
-//
-// // This is the output texture that will be the input for the JumpFlood kernel
-// RWTexture2D<float4> _SeedTexture;
-//
-// // Parameters
-// uint _TextureResolution;
-// float _IsoValue;
-
-// [numthreads(8,8,1)]
-// void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
-// {
-//     // Boundary check
-//     if (id.x >= _TextureResolution || id.y >= _TextureResolution)
-//         return;
-//
-//     // We need to check a 2x2 group of pixels to reliably find boundaries.
-//     // Load the value at the current pixel and its right/down neighbors.
-//     // Using Load() is important here as it fetches from a specific integer texel coordinate.
-//     float val_tl = _ScalarField.Load(int3(id.xy, 0)).r; // Top-Left (current pixel)
-//     float val_tr = _ScalarField.Load(int3(id.x + 1, id.y, 0)).r; // Top-Right
-//     float val_bl = _ScalarField.Load(int3(id.x, id.y + 1, 0)).r; // Bottom-Left
-//
-//     bool inside_tl = val_tl < _IsoValue;
-//     bool inside_tr = val_tr < _IsoValue;
-//     bool inside_bl = val_bl < _IsoValue;
-//
-//     // If the inside/outside state is different between the pixel and its neighbors,
-//     // then this pixel lies on the boundary of the shape.
-//     if (inside_tl != inside_tr || inside_tl != inside_bl)
-//     {
-//         // This is a boundary pixel, so its distance to the surface is 0.
-//         // We define its "seed" as its own position in world space [-1, 1].
-//         // The JFA will propagate this information.
-//         float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0f - 1.0f;
-//
-//         // Store: XY = closest point pos, Z=unused, W=distance
-//         _SeedTexture[id.xy] = float4(worldPos.x, worldPos.y, 0, 0);
-//     }
-//     else
-//     {
-//         // This is not a boundary pixel. It has no seed.
-//         // We give it an "infinite" distance so it will be overwritten by the first valid seed.
-//         _SeedTexture[id.xy] = float4(0, 0, 0, 1e9);
-//     }
-// }
-
-// Replace the existing SeedFromScalarField kernel with this corrected version
 
 [numthreads(8,8,1)]
 void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
@@ -251,4 +202,148 @@ void SeedFromScalarField(uint3 id : SV_DispatchThreadID)
         // Not a boundary pixel. Give it "infinite" distance.
         _SeedTexture[id.xy] = float4(0, 0, 0, 1e9);
     }
+}
+
+#pragma kernel BuildSegmentGrid
+
+// Grid parameters from C#
+uint _GridResolution;
+uint _MaxSegmentsPerCell;
+
+
+// Output grid data structures
+RWByteAddressBuffer _GridCounts; // Using Raw buffer for atomic operations
+RWStructuredBuffer<uint> _GridIndices;
+// StructuredBuffer<int> _SegmentCount;
+// This kernel runs one thread per segment
+[numthreads(256,1,1)]
+void BuildSegmentGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint segment_id = id.x;
+    
+    // Get the number of segments from the count buffer (assuming it's already copied)
+    // Or, more simply, just check if we're out of bounds of the buffer
+    uint numSegments = _SegmentCount[0]; // Read the actual count
+    if (segment_id >= numSegments) return;
+
+    // Get segment start and end points in world space [-1, 1]
+    float2 p1 = _Segments[segment_id].xy;
+    float2 p2 = _Segments[segment_id].zw;
+
+    // Convert world space to grid coordinates [0, _GridResolution-1]
+    int2 min_cell = (int2)floor((min(p1, p2) + 1.0) * 0.5 * _GridResolution);
+    int2 max_cell = (int2)ceil((max(p1, p2) + 1.0) * 0.5 * _GridResolution);
+
+    min_cell = max(0, min_cell);
+    max_cell = min((int)_GridResolution - 1, max_cell);
+
+    // Iterate over the grid cells this segment's bounding box covers
+    for (int y = min_cell.y; y <= max_cell.y; y++)
+    {
+        for (int x = min_cell.x; x <= max_cell.x; x++)
+        {
+            // Get a flat index for the current grid cell
+            uint cell_flat_index = y * _GridResolution + x;
+            
+            // Atomically increment the counter for this cell to get a unique local index
+            uint local_index;
+            _GridCounts.InterlockedAdd(cell_flat_index * 4, 1, local_index);
+
+            // If we haven't exceeded the max segments for this cell, add our ID to the list
+            if (local_index < _MaxSegmentsPerCell)
+            {
+                uint list_start_index = cell_flat_index * _MaxSegmentsPerCell;
+                _GridIndices[list_start_index + local_index] = segment_id;
+            }
+        }
+    }
+}
+
+#pragma kernel SeedFromSegments_SP
+#pragma kernel FinalizeSDF_FromDense
+
+// ... (keep all your existing kernels and helper functions like ClosestPointOnSegment)
+
+//--------------------------------------------------------------------------------------
+// KERNEL: SeedFromSegments_SP
+// High-performance version of SeedFromSegments that uses the spatial grid.
+//--------------------------------------------------------------------------------------
+[numthreads(8,8,1)]
+void SeedFromSegments_SP(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution) return;
+
+    float2 worldPos = ((float2(id.xy) + 0.5f) / _TextureResolution) * 2.0f - 1.0f;
+    float min_dist_sq = 1e9;
+    
+    // Convert world position to grid coordinates to find our local cell
+    int2 center_cell = (int2)((worldPos + 1.0) * 0.5 * _GridResolution);
+
+    // Search our own cell and the 8 surrounding neighbors
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int2 cell_to_check = center_cell + int2(dx, dy);
+
+            // Boundary check
+            if (all(cell_to_check >= 0) && all(cell_to_check < _GridResolution))
+            {
+                uint cell_flat_index = cell_to_check.y * _GridResolution + cell_to_check.x;
+                uint segment_count_in_cell = _GridCounts.Load(cell_flat_index * 4);
+                uint list_start_index = cell_flat_index * _MaxSegmentsPerCell;
+
+                // Loop through only the segments in this local cell
+                for (uint i = 0; i < min(segment_count_in_cell, _MaxSegmentsPerCell); i++)
+                {
+                    uint segment_id = _GridIndices[list_start_index + i];
+                    
+                    float2 p1 = _Segments[segment_id].xy;
+                    float2 p2 = _Segments[segment_id].zw;
+
+                    // We don't need the distance output from this helper here
+                    float discard_dist; 
+                    float2 closest_on_seg = ClosestPointOnSegment(worldPos, p1, p2, discard_dist);
+                    float dist_sq = dot(worldPos - closest_on_seg, worldPos - closest_on_seg);
+
+                    if (dist_sq < min_dist_sq)
+                    {
+                        min_dist_sq = dist_sq;
+                    }
+                }
+            }
+        }
+    }
+
+    // The seed position is not needed, just the final distance.
+    // We store the final, unsigned distance in the .w component of the seed texture.
+    _SeedTexture[id.xy] = float4(0, 0, 0, sqrt(min_dist_sq));
+}
+
+
+//--------------------------------------------------------------------------------------
+// KERNEL: FinalizeSDF_FromDense
+// A simple kernel that takes the dense distance data from SeedFromSegments_SP,
+// determines the sign, and writes the final SDF. Skips JFA.
+//--------------------------------------------------------------------------------------
+[numthreads(8,8,1)]
+void FinalizeSDF_FromDense(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution) return;
+
+    // The precise, unsigned distance was calculated and stored in the seed texture's alpha channel
+    float distance = _SeedTexture[id.xy].a;
+    float sign = 1.0;
+
+    // Determine the sign by sampling the original scalar field
+    if (_HasScalarField)
+    {
+        float2 worldPos = ((float2(id.xy) + 0.5f) / _TextureResolution) * 2.0f - 1.0f;
+        float2 uv = (worldPos + 1.0) * 0.5;
+        float fieldValue = _ScalarField.SampleLevel(sampler_ScalarField, uv, 0).r;
+        sign = (fieldValue < _IsoValue) ? -1.0 : 1.0;
+    }
+
+    // Write final signed distance to the output texture.
+    _SDFTexture[id.xy] = float4(distance * sign, 0, 0, 1);
 }
