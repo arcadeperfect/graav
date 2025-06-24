@@ -10,7 +10,7 @@ namespace PlanetGen
     public class PlanetGenMain : MonoBehaviour
     {
         [Header("Field Generation")] 
-        [TriggerFieldRegen] public int fieldWidth = 1024;
+        [TriggerFieldRegen] [Min(2)]public int fieldWidth = 1024;
         [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
         [Range(0, 10f)] [TriggerFieldRegen] public float amplitude = 0.5f;
         [Range(0, 10f)] [TriggerFieldRegen] public float frequency = 0.5f;
@@ -31,6 +31,12 @@ namespace PlanetGen
         public bool renderActive;
         
         [Header("SDF 1 - used to render the surface")] 
+        [Header("Preview")] 
+        [TriggerComputeRegen] public bool enableSdfPreview = true;
+        [TriggerComputeRegen] [Range(0,3)]public int sdfDisplayMode = 0; // 0 = SDF, 1 = Warped SDF
+        [TriggerComputeRegen] public float sdfDisplayOpacity = 1f;
+        [TriggerComputeRegen] public float sdfDisplayMult = 1f;
+        [Header("Generation")] 
         [TriggerComputeRegen] public int textureRes = 1024;
         [Range(0, 1f)] [TriggerComputeRegen] public float lineWidth;
         [TriggerComputeRegen] public float bandSpacing = 0.05f;
@@ -59,6 +65,7 @@ namespace PlanetGen
         private ParameterWatcher paramWatcher;
         
         public Renderer fieldRenderer;
+        public Renderer sdfRenderer;
         public Renderer resultRenderer;
         private FieldGen.FieldData field_textures;
         
@@ -115,6 +122,7 @@ namespace PlanetGen
         {
             computePipeline.Dispatch(field_textures);
 
+
             // Set textures on the final renderer
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors);
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
@@ -128,6 +136,15 @@ namespace PlanetGen
             resultRenderer.material.SetFloat("_BandInterval", bandInterval);
 
             resultRenderer.enabled = renderActive;
+            
+            
+            // Set texture for SDF preview renderer
+            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.SdfTexture);
+            sdfRenderer.material.SetInt("_Mode", sdfDisplayMode);
+            sdfRenderer.material.SetFloat("_Alpha", sdfDisplayOpacity);
+            sdfRenderer.material.SetFloat("_Mult", sdfDisplayMult);
+            sdfRenderer.enabled = enableSdfPreview;
+
         }
         
         public void OnDestroy()

@@ -2,11 +2,10 @@
 {
     Properties
     {
-        _FieldTex ("Texture", 2D) = "white" {}
-        _ColorTex ("Texture", 2D) = "white" {}
+        _SDFTex ("Texture", 2D) = "green" {}
         _Mode("Display Mode", Int) = 0
         _Alpha("Opacity", Float) = 1
-        
+        _Mult("Mult" , Float) = 1
     }
     
     SubShader
@@ -47,16 +46,14 @@
                 float2 uv : TEXCOORD0;
             };
             
-            TEXTURE2D(_FieldTex);
-            TEXTURE2D(_ColorTex);
-            SAMPLER(sampler_FieldTex);
-            SAMPLER(sampler_ColorTex);
+            TEXTURE2D(_SDFTex);
+            SAMPLER(sampler_SDFTex);
             
             CBUFFER_START(UnityPerMaterial)
-                float4 _FieldTex_ST;
-                float4 _ColorTex_ST;
+                float4 _SDFTex_ST;
                 int _Mode;
                 float _Alpha;
+                float _Mult;
             CBUFFER_END
 
 
@@ -71,19 +68,35 @@
             half4 frag(Varyings input) : SV_Target
             {
                 // Sample the texture and return raw RGBA values
-                half4 field = SAMPLE_TEXTURE2D(_FieldTex, sampler_FieldTex, input.uv);
-                half4 col = SAMPLE_TEXTURE2D(_ColorTex, sampler_ColorTex, input.uv);
+                half4 sdf = SAMPLE_TEXTURE2D(_SDFTex, sampler_SDFTex, input.uv);
 
+                // return half4(sdf.r, sdf.g, sdf.b, 1); 
+
+                sdf *= _Mult;
+                
                 switch (_Mode)
                 {
-                    case 0:
-                        return field * _Alpha; // Return the raw field texture color
-                    case 1:
-                        return col * _Alpha; // Return the color texture color
-                    case 2:
-                        return field.r * col * _Alpha; // Return the color texture color modulated by the red channel of the field
+                case 0:
+                    return half4(sdf.rgb, _Alpha); // Return the raw SDF texture color
+                case 1:
+                    return half4(sdf.rrr, _Alpha); // Return the color texture color
+                case 2:
+                    return half4(sdf.ggg, _Alpha); // Return the color texture color
+                case 3:
+                    return half4(sdf.bbb, _Alpha); // Return the color texture color
                 }
                 return half4(0, 0, 0, 0); // Default to transparent if mode is invalid
+                
+                // switch (_Mode)
+                // {
+                //     case 0:
+                //         return field * _Alpha; // Return the raw field texture color
+                //     case 1:
+                //         return col * _Alpha; // Return the color texture color
+                //     case 2:
+                //         return field.r * col * _Alpha; // Return the color texture color modulated by the red channel of the field
+                // }
+                // return half4(0, 0, 0, 0); // Default to transparent if mode is invalid
             }
             ENDHLSL
         }
