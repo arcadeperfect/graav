@@ -97,6 +97,7 @@
                 // --- MAIN OUTLINE RENDERING (Simplified gradient compensation) ---
                 // We use the ORIGINAL, un-warped SDF so the main outline never changes.
                 half4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_linear_clamp, input.uv);
+                // half4 mainSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);
                 // float mainSignedDist = mainSdfData.r * mainSdfData.g;
 
                 // Simplified approach: use fwidth for anti-aliasing but keep _LineWidth as direct threshold
