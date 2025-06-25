@@ -1,0 +1,165 @@
+﻿#pragma kernel BuildSpatialHash
+#pragma kernel CalculateLocalUDF
+
+//--------------------------------------------------------------------------------------
+// SHARED DATA STRUCTURES
+//--------------------------------------------------------------------------------------
+
+// Input segment data
+StructuredBuffer<float4> _Segments;
+StructuredBuffer<int> _SegmentCount;
+
+// Spatial hash data structures
+RWStructuredBuffer<uint> _GridCounter;    // How many segments in each cell
+RWStructuredBuffer<uint> _SegmentIndices; // Flattened list of segment indices per cell
+
+// Hash grid parameters
+uint _GridResolution;     // e.g., 64 (for 64x64 grid)
+uint _MaxSegmentsPerCell; // e.g., 32
+uint _TextureResolution;  // e.g., 1024
+float _MaxUDFDistance;    // Only calculate UDF within this distance
+
+// UDF output
+RWTexture2D<float> _LocalUDF;
+
+//--------------------------------------------------------------------------------------
+// HELPER FUNCTIONS
+//--------------------------------------------------------------------------------------
+
+uint Hash2D(uint2 coord)
+{
+    return coord.x + coord.y * _GridResolution;
+}
+
+uint2 WorldToGrid(float2 worldPos)
+{
+    // Convert world space [-1,1] to grid coordinates [0, _GridResolution-1]
+    float2 gridPos = (worldPos + 1.0) * 0.5 * _GridResolution;
+    return clamp(uint2(gridPos), uint2(0,0), uint2(_GridResolution-1, _GridResolution-1));
+}
+
+float2 ClosestPointOnSegment(float2 inputPoint, float2 segStart, float2 segEnd)
+{
+    float2 segVec = segEnd - segStart;
+    float2 pointVec = inputPoint - segStart;
+    float segLengthSq = dot(segVec, segVec);
+    
+    if (segLengthSq < 1e-6) {
+        // Degenerate segment - return start point
+        return segStart;
+    }
+    
+    float t = saturate(dot(pointVec, segVec) / segLengthSq);
+    return segStart + t * segVec;
+}
+
+//--------------------------------------------------------------------------------------
+// KERNEL: BuildSpatialHash
+// Distributes segments into grid cells
+//--------------------------------------------------------------------------------------
+
+[numthreads(64, 1, 1)]
+void BuildSpatialHash(uint3 id : SV_DispatchThreadID)
+{
+    uint segmentIndex = id.x;
+    uint segmentCount = _SegmentCount[0];
+    
+    if (segmentIndex >= segmentCount) return;
+    
+    float4 segment = _Segments[segmentIndex];
+    float2 segStart = segment.xy;
+    float2 segEnd = segment.zw;
+    
+    // Find bounding box of segment in grid space
+    uint2 gridStart = WorldToGrid(min(segStart, segEnd));
+    uint2 gridEnd = WorldToGrid(max(segStart, segEnd));
+    
+    // Add padding to account for MaxUDFDistance
+    // Convert world distance to grid cells
+    float gridCellSize = 2.0 / _GridResolution; // World size of one grid cell
+    int padding = max(1, (int)ceil(_MaxUDFDistance / gridCellSize));
+    
+    // Clamp to grid bounds with padding
+    int2 paddedStart = max(int2(gridStart) - padding, int2(0, 0));
+    int2 paddedEnd = min(int2(gridEnd) + padding, int2(_GridResolution-1, _GridResolution-1));
+    
+    // Add this segment to all affected grid cells
+    for (int y = paddedStart.y; y <= paddedEnd.y; y++)
+    {
+        for (int x = paddedStart.x; x <= paddedEnd.x; x++)
+        {
+            uint cellHash = Hash2D(uint2(x, y));
+            
+            // Atomically increment counter and get insertion index
+            uint insertIndex;
+            InterlockedAdd(_GridCounter[cellHash], 1, insertIndex);
+            
+            // Only add if we haven't exceeded max segments per cell
+            if (insertIndex < _MaxSegmentsPerCell)
+            {
+                uint globalIndex = cellHash * _MaxSegmentsPerCell + insertIndex;
+                _SegmentIndices[globalIndex] = segmentIndex;
+            }
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------
+// KERNEL: CalculateLocalUDF
+// Calculates UDF for each pixel using spatial hash lookup
+//--------------------------------------------------------------------------------------
+
+[numthreads(8, 8, 1)]
+void CalculateLocalUDF(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+        return;
+    
+    // Convert pixel to world space [-1, 1]
+    float2 worldPos = (float2(id.xy) / float(_TextureResolution)) * 2.0 - 1.0;
+    
+    // Find which grid cell this pixel belongs to
+    uint2 gridCoord = WorldToGrid(worldPos);
+    
+    float minDistance = _MaxUDFDistance + 1.0; // Start with invalid distance
+    
+    // Check current cell and all 8 neighbors (3x3 grid)
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int2 neighborGrid = int2(gridCoord) + int2(dx, dy);
+            
+            // Check bounds
+            if (neighborGrid.x >= 0 && neighborGrid.x < (int)_GridResolution &&
+                neighborGrid.y >= 0 && neighborGrid.y < (int)_GridResolution)
+            {
+                uint neighborHash = Hash2D(uint2(neighborGrid));
+                uint segmentCount = min(_GridCounter[neighborHash], _MaxSegmentsPerCell);
+                
+                // Check all segments in this cell
+                for (uint i = 0; i < segmentCount; i++)
+                {
+                    uint segmentIndex = _SegmentIndices[neighborHash * _MaxSegmentsPerCell + i];
+                    float4 segment = _Segments[segmentIndex];
+                    
+                    float2 closestPoint = ClosestPointOnSegment(worldPos, segment.xy, segment.zw);
+                    float distance = length(worldPos - closestPoint);
+                    
+                    minDistance = min(minDistance, distance);
+                }
+            }
+        }
+    }
+    
+    // Only write valid distances (within MaxUDFDistance)
+    if (minDistance <= _MaxUDFDistance)
+    {
+        _LocalUDF[id.xy] = minDistance;
+    }
+    else
+    {
+        // Mark as invalid/far - we'll use the coarse SDF for these pixels
+        _LocalUDF[id.xy] = -1.0;
+    }
+}

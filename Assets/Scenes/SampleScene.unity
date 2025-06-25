@@ -424,7 +424,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fd3f28a0d1bb884c8459f79e191cb36, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  fieldWidth: 256
+  scalarFieldWidth: 512
   radius: 0.383
   amplitude: 0
   frequency: 7.2
@@ -443,7 +443,7 @@ MonoBehaviour:
   sdfDisplayMult: 1
   textureRes: 1024
   lineWidth: 0.002
-  seedMode: 0
+  seedMode: 2
   domainWarp2: 96
   domainWarpScale2: 15.4
   domainWarpIterations2: 2
