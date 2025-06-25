@@ -7,22 +7,14 @@ namespace PlanetGen
     {
         private PlanetGenMain parent;
         private int _marchingSquaresKernel;
-
         private ComputeShader MarchingSquaresShader;
-
         private PingPongPipeline fieldPreprocessingPipeline; // Renamed and enhanced
         private PingPongPipeline sdfDomainWarpPingPong;
-
-        // This will now be the output of the domain warp pass
         public RenderTexture WarpedSdfTexture { get; private set; }
-
-        // Original surface buffers (Band buffers are now gone)
         public ComputeBuffer SegmentsBuffer { get; private set; }
         public ComputeBuffer SegmentColorsBuffer { get; private set; }
         public ComputeBuffer SegmentCountBuffer { get; private set; }
         public ComputeBuffer DrawArgsBuffer { get; private set; }
-        public ComputeBuffer gridCountsBuffer { get; private set; }
-        public ComputeBuffer gridIdxBuffer { get; private set; }
         public RenderTexture SdfTexture { get; private set; }
 
         private int fieldResolution;
@@ -31,15 +23,27 @@ namespace PlanetGen
         int gridResolution = 64;
         int maxSegmentsPerCell = 32;
 
-        private JumpFlooder jumpFlooder1; // We only need one JumpFlooder now
+        private JumpFlooder jumpFlooder1;
 
         public ComputePipeline(PlanetGenMain parent)
         {
             this.parent = parent;
-            MarchingSquaresShader = Resources.Load<ComputeShader>(ComputeShaderConstants.MarchingSquaresCompute.Path);
-            if (MarchingSquaresShader == null) Debug.LogWarning("MarchingSquares shader is null");
-            _marchingSquaresKernel =
-                MarchingSquaresShader.FindKernel(ComputeShaderConstants.MarchingSquaresCompute.Kernels.MarchingSquares);
+
+            // Use the provider instead of direct Resources.Load
+            MarchingSquaresShader = ComputeShaderConstants.MarchingSquaresCompute.GetShader();
+            if (MarchingSquaresShader == null)
+            {
+                Debug.LogError("Failed to load MarchingSquares shader through provider");
+                return;
+            }
+
+            // Use the provider to get the kernel
+            _marchingSquaresKernel = ComputeShaderConstants.MarchingSquaresCompute.GetMarchingSquaresKernel();
+            if (_marchingSquaresKernel < 0)
+            {
+                Debug.LogError("Failed to get MarchingSquares kernel through provider");
+                return;
+            }
 
             // Only one JumpFlooder is needed for the main SDF
             jumpFlooder1 = new JumpFlooder();
@@ -58,13 +62,12 @@ namespace PlanetGen
 
         void InitBuffers(int fieldWidth, int textureRes)
         {
-            // Dispose of any existing buffers first
             SegmentsBuffer?.Dispose();
             SegmentColorsBuffer?.Dispose();
             DrawArgsBuffer?.Dispose();
             SegmentCountBuffer?.Dispose();
 
-            // Recreate essential buffers
+            // Recreate buffers
             int maxSegments = fieldWidth * fieldWidth * 2;
             SegmentsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Append);
             SegmentColorsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 8, ComputeBufferType.Append);
@@ -91,41 +94,52 @@ namespace PlanetGen
                 filterMode = FilterMode.Bilinear
             };
             WarpedSdfTexture.Create();
-
-
-            gridCountsBuffer =
-                new ComputeBuffer(gridResolution * gridResolution, sizeof(uint), ComputeBufferType.Raw);
-            gridIdxBuffer = new ComputeBuffer(gridResolution * gridResolution * maxSegmentsPerCell, sizeof(uint));
         }
 
         void InitPingPongPipelines()
         {
-            // Enhanced field preprocessing pipeline with domain warp AND blur
+            var domainWarpShader = ComputeShaderConstants.PingPongDomainWarpCompute.GetShader();
+            var gaussianBlurShader = ComputeShaderConstants.GaussianBlurCompute.GetShader();
+
+            if (domainWarpShader == null || gaussianBlurShader == null)
+            {
+                Debug.LogError("Failed to load shaders for field preprocessing pipeline");
+                return;
+            }
+
             fieldPreprocessingPipeline = new PingPongPipeline()
                 .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
-                .AddStep(Resources.Load<ComputeShader>(ComputeShaderConstants.PingPongDomainWarpCompute.Path),
+                .AddStep(domainWarpShader,
                     ComputeShaderConstants.PingPongDomainWarpCompute.Kernels.Warp, conf => conf
                         .WithIterations(() => parent.domainWarpIterations)
                         .WithFloatParam("amplitude", () => parent.domainWarp)
                         .WithFloatParam("frequency", () => parent.domainWarpScale)
                 )
-                .AddStep(ComputeShaderConstants.GaussianBlurCompute.Get(),
+                .AddStep(gaussianBlurShader,
                     ComputeShaderConstants.GaussianBlurCompute.Kernels.GaussianBlur,
                     conf => conf
                         .WithFloatParam("blur", () => parent.blur1)
                 );
             fieldPreprocessingPipeline.Init(fieldResolution);
 
-            // SDF domain warp pipeline remains the same
+            var sdfDomainWarpShader = ComputeShaderConstants.PingPongDomainWarpCompute.GetShader();
+            var sdfGaussianBlurShader = ComputeShaderConstants.GaussianBlurCompute.GetShader();
+
+            if (sdfDomainWarpShader == null || sdfGaussianBlurShader == null)
+            {
+                Debug.LogError("Failed to load shaders for SDF domain warp pipeline");
+                return;
+            }
+
             sdfDomainWarpPingPong = new PingPongPipeline()
                 .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
-                .AddStep(Resources.Load<ComputeShader>(ComputeShaderConstants.PingPongDomainWarpCompute.Path),
+                .AddStep(sdfDomainWarpShader,
                     ComputeShaderConstants.PingPongDomainWarpCompute.Kernels.Warp, conf => conf
                         .WithIterations(() => parent.domainWarpIterations2)
                         .WithFloatParam("amplitude", () => parent.domainWarp2)
                         .WithFloatParam("frequency", () => parent.domainWarpScale2)
                 )
-                .AddStep(ComputeShaderConstants.GaussianBlurCompute.Get(),
+                .AddStep(sdfGaussianBlurShader,
                     ComputeShaderConstants.GaussianBlurCompute.Kernels.GaussianBlur,
                     conf => conf
                         .WithFloatParam("blur", () => parent.blur2)
@@ -134,9 +148,6 @@ namespace PlanetGen
             sdfDomainWarpPingPong.Init(textureResolution);
         }
 
-        /// <summary>
-        /// The Dispatch method now uses the enhanced preprocessing pipeline.
-        /// </summary>
         public void Dispatch(FieldGen.FieldData textures)
         {
             if (SegmentsBuffer == null) return;
@@ -163,98 +174,31 @@ namespace PlanetGen
             Graphics.Blit(warpedResultTexture, WarpedSdfTexture);
         }
 
-        // GenerateSurfaceAndSDF is unchanged from your refactor
         // void GenerateSurfaceAndSDF(ComputeResources preprocessedResults, FieldGen.FieldData textures)
         // {
+        //     var msShader = MarchingSquaresShader;
+        //
+        //     // --- Part 1: Marching Squares (Complete setup) ---
         //     SegmentsBuffer.SetCounterValue(0);
         //     SegmentColorsBuffer.SetCounterValue(0);
-        //     // ... marching squares for debug ...
-        //     var msShader = MarchingSquaresShader;
+        //
+        //     // Set all required buffers and textures for marching squares
         //     msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
         //     msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
-        //     msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture",
-        //         preprocessedResults.Textures["field"]);
+        //     msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture", preprocessedResults.Textures["field"]);
         //     msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
         //     msShader.SetFloat("IsoValue", 0.5f);
         //     msShader.SetInt("TextureWidth", fieldResolution);
         //     msShader.SetInt("TextureHeight", fieldResolution);
+        //
         //     int fieldThreadGroups = Mathf.CeilToInt(fieldResolution / 8.0f);
         //     msShader.Dispatch(_marchingSquaresKernel, fieldThreadGroups, fieldThreadGroups, 1);
         //     ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
         //
-        //     // JFA from scalar field
-        //     var scalarFieldForSDF = preprocessedResults.Textures["field"];
-        //     if (parent.seedMode == 0)
-        //         jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f);
-        //     else
-        //         jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
-        //     jumpFlooder1.RunJumpFlood();
-        //     jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
-        // }
-        // void GenerateSurfaceAndSDF(ComputeResources preprocessedResults, FieldGen.FieldData textures)
-        // {
-        //     // --- Part 1: Marching Squares (Unchanged) ---
-        //     SegmentsBuffer.SetCounterValue(0);
-        //     SegmentColorsBuffer.SetCounterValue(0);
-        //     var msShader = MarchingSquaresShader;
-        //     msShader.SetBuffer(_marchingSquaresKernel, "SegmentsBuffer", SegmentsBuffer);
-        //     msShader.SetBuffer(_marchingSquaresKernel, "SegmentColorsBuffer", SegmentColorsBuffer);
-        //     msShader.SetTexture(_marchingSquaresKernel, "ScalarFieldTexture",
-        //         preprocessedResults.Textures["field"]);
-        //     msShader.SetTexture(_marchingSquaresKernel, "ColorFieldTexture", textures.Colors);
-        //     msShader.SetFloat("IsoValue", 0.5f);
-        //     msShader.SetInt("TextureWidth", fieldResolution);
-        //     msShader.SetInt("TextureHeight", fieldResolution);
-        //     int fieldThreadGroups = Mathf.CeilToInt(fieldResolution / 8.0f);
-        //     msShader.Dispatch(_marchingSquaresKernel, fieldThreadGroups, fieldThreadGroups, 1);
-        //     ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
         //
-        //     // --- Part 2: Build Spatial Grid (NEW) ---
-        //     // This is the new step. It runs right after we know the segments.
-        //     int maxSegments = fieldResolution * fieldResolution * 2;
-        //     jumpFlooder1.BuildSegmentGrid(SegmentsBuffer, SegmentCountBuffer, gridCountsBuffer, gridIdxBuffer, gridResolution, maxSegmentsPerCell, maxSegments);
-        //
-        //     // --- Part 3: JFA / SDF Generation (Unchanged for now) ---
-        //     // This part will eventually be replaced by the RefineSDF logic,
-        //     // but for now, the grid is being built and is ready to be used.
-        //     var scalarFieldForSDF = preprocessedResults.Textures["field"];
-        //     if (parent.seedMode == 0)
-        //         jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f);
-        //     else
-        //         jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
-        //
-        //     jumpFlooder1.RunJumpFlood();
-        //     jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
-        // }
-        // void GenerateSurfaceAndSDF(ComputeResources preprocessedResults, FieldGen.FieldData textures)
-        // {
-        //     var msShader = MarchingSquaresShader;
-        //
-        //     // --- Part 1: Marching Squares (Unchanged) ---
-        //     SegmentsBuffer.SetCounterValue(0);
-        //     SegmentColorsBuffer.SetCounterValue(0);
-        //     // ... (dispatch logic for marching squares is the same) ...
-        //     int fieldThreadGroups = Mathf.CeilToInt(fieldResolution / 8.0f);
-        //     msShader.Dispatch(_marchingSquaresKernel, fieldThreadGroups, fieldThreadGroups, 1);
-        //     ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
-        //
-        //     // --- Part 2: Build Spatial Grid (Now used by multiple modes) ---
-        //     int maxSegments = fieldResolution * fieldResolution * 2;
-        //     jumpFlooder1.BuildSegmentGrid(SegmentsBuffer, SegmentCountBuffer, gridCountsBuffer, gridIdxBuffer, gridResolution, maxSegmentsPerCell, maxSegments);
-        //
-        //     // --- Part 3: SDF Generation ---
         //     var scalarFieldForSDF = preprocessedResults.Textures["field"];
         //
-        //     // Add a new case for the grid-accelerated method (e.g., seedMode == 2)
-        //     if (parent.seedMode == 2) // NEW: Grid-Accelerated Path
-        //     {
-        //         // Step 1: Densely calculate the distance to the nearest segment using the grid
-        //         jumpFlooder1.GenerateSeedsFromSegments_SP(SegmentsBuffer, gridCountsBuffer, gridIdxBuffer, gridResolution, maxSegmentsPerCell);
-        //
-        //         // Step 2: Apply the sign to the dense distance data. JFA is skipped.
-        //         jumpFlooder1.FinalizeSDF_FromDense(SdfTexture, scalarFieldForSDF, 0.5f);
-        //     }
-        //     else if (parent.seedMode == 1) // Original Brute-Force Path
+        //     if (parent.seedMode == 1) // Original Brute-Force Path
         //     {
         //         jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
         //         jumpFlooder1.RunJumpFlood();
@@ -267,7 +211,6 @@ namespace PlanetGen
         //         jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
         //     }
         // }
-
         void GenerateSurfaceAndSDF(ComputeResources preprocessedResults, FieldGen.FieldData textures)
         {
             var msShader = MarchingSquaresShader;
@@ -289,43 +232,57 @@ namespace PlanetGen
             msShader.Dispatch(_marchingSquaresKernel, fieldThreadGroups, fieldThreadGroups, 1);
             ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
 
-            // --- Part 2: Build Spatial Grid (Now used by multiple modes) ---
-            int maxSegments = fieldResolution * fieldResolution * 2;
-            var clearData = new uint[gridResolution * gridResolution];
-            gridCountsBuffer.SetData(clearData);
-            jumpFlooder1.BuildSegmentGrid(SegmentsBuffer, SegmentCountBuffer, gridCountsBuffer, gridIdxBuffer,
-                gridResolution, maxSegmentsPerCell, maxSegments);
-
-            // --- Part 3: SDF Generation ---
             var scalarFieldForSDF = preprocessedResults.Textures["field"];
 
-            // Add a new case for the grid-accelerated method (e.g., seedMode == 2)
-            if (parent.seedMode == 2) // NEW: Grid-Accelerated Path
+            // Enhanced seed mode selection
+            switch (parent.seedMode)
             {
-                // Step 1: Densely calculate the distance to the nearest segment using the grid
-                jumpFlooder1.GenerateSeedsFromSegments_SP(SegmentsBuffer, gridCountsBuffer, gridIdxBuffer,
-                    gridResolution, maxSegmentsPerCell);
+                case 0: // Scalar Field Path (original - fast but potentially jaggy)
+                    // Debug.Log("0");
+                    jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f);
+                    jumpFlooder1.RunJumpFlood();
+                    jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
+                    break;
 
-                // Step 2: Apply the sign to the dense distance data. JFA is skipped.
-                jumpFlooder1.FinalizeSDF_FromDense(SdfTexture, scalarFieldForSDF, 0.5f);
+                case 1: // Original Brute-Force Path (slow but high quality)
+                    // Debug.Log("1");
+                    jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
+                    jumpFlooder1.RunJumpFlood();
+                    jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
+                    break;
+
+                case 2: // NEW: High-Quality JFA Path (fast and high quality)
+                    // Debug.Log("2");
+                    // Calculate appropriate seed distance based on resolutions
+                    float maxSeedDistance = CalculateOptimalSeedDistance();
+                    jumpFlooder1.GenerateSeedsFromSegmentsHQ(SegmentsBuffer, SegmentCountBuffer, maxSeedDistance);
+                    jumpFlooder1.RunJumpFlood();
+                    jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
+                    break;
+
+                default:
+                    // Fallback to mode 2
+                    goto case 2;
             }
-            else if (parent.seedMode == 1) // Original Brute-Force Path
-            {
-                jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
-                jumpFlooder1.RunJumpFlood();
-                jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
-            }
-            else // seedMode == 0, Scalar Field Path
-            {
-                jumpFlooder1.GenerateSeedsFromScalarField(scalarFieldForSDF, 0.5f);
-                jumpFlooder1.RunJumpFlood();
-                jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarFieldForSDF, 0.5f);
-            }
+        }
+        /// <summary>
+        /// Calculates optimal seeding distance based on texture resolution and field resolution
+        /// </summary>
+        private float CalculateOptimalSeedDistance()
+        {
+            // Base the seed distance on the relationship between field and texture resolution
+            float resolutionRatio = (float)textureResolution / fieldResolution;
+    
+            // For higher texture resolutions relative to field resolution, we need larger seed distances
+            // This ensures we capture enough detail around the contours
+            float baseSeedDistance = 2.0f / textureResolution; // Base distance in world space
+            float adaptiveFactor = Mathf.Max(1.0f, resolutionRatio * 0.5f);
+    
+            return baseSeedDistance * adaptiveFactor;
         }
 
         public void Dispose()
         {
-            // Clean up everything that remains
             SegmentsBuffer?.Dispose();
             SegmentColorsBuffer?.Dispose();
             DrawArgsBuffer?.Dispose();
@@ -333,7 +290,7 @@ namespace PlanetGen
             if (SdfTexture != null) SdfTexture.Release();
             if (WarpedSdfTexture != null) WarpedSdfTexture.Release();
 
-            fieldPreprocessingPipeline?.Dispose(); // Updated name
+            fieldPreprocessingPipeline?.Dispose();
             sdfDomainWarpPingPong?.Dispose();
 
             jumpFlooder1?.Dispose();
