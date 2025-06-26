@@ -126,18 +126,18 @@ namespace PlanetGen
             jfaTempTexture = null;
         }
 
-        // Keep the original method for compatibility
-        public void GenerateSeedsFromSegments(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer)
-        {
-            var shader = jumpFloodShader;
-
-            shader.SetBuffer(UdfFromSegmentsBruteForceKernel, "_Segments", segmentsBuffer);
-            shader.SetBuffer(UdfFromSegmentsBruteForceKernel, "_SegmentCount", segmentCountBuffer);
-            shader.SetTexture(UdfFromSegmentsBruteForceKernel, "_SeedTexture", seedTexture);
-            shader.SetInt("_TextureResolution", textureResolution);
-
-            int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
-            shader.Dispatch(UdfFromSegmentsBruteForceKernel, threadGroups, threadGroups, 1);
-        }
+        // // Keep the original method for compatibility
+        // public void GenerateSeedsFromSegments(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer)
+        // {
+        //     var shader = jumpFloodShader;
+        //
+        //     shader.SetBuffer(UdfFromSegmentsBruteForceKernel, "_Segments", segmentsBuffer);
+        //     shader.SetBuffer(UdfFromSegmentsBruteForceKernel, "_SegmentCount", segmentCountBuffer);
+        //     shader.SetTexture(UdfFromSegmentsBruteForceKernel, "_SeedTexture", seedTexture);
+        //     shader.SetInt("_TextureResolution", textureResolution);
+        //
+        //     int threadGroups = Mathf.CeilToInt(textureResolution / 8.0f);
+        //     shader.Dispatch(UdfFromSegmentsBruteForceKernel, threadGroups, threadGroups, 1);
+        // }
     }
 }

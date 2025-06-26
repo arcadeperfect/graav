@@ -1,6 +1,4 @@
-﻿
-
-using System;
+﻿using System;
 using UnityEngine;
 
 namespace PlanetGen
@@ -12,14 +10,12 @@ namespace PlanetGen
         private ComputeShader MarchingSquaresShader;
         private PingPongPipeline fieldPreprocessingPipeline; // Renamed and enhanced
         private PingPongPipeline sdfDomainWarpPingPong;
-        
-        // NEW: Precise distance field components
-        private ComputeShader preciseDistanceFieldShader;
+
         private int markTilesKernel;
         private int distanceFieldKernel;
-        private ComputeBuffer activeTilesBuffer;
+
         private const int TILE_SIZE = 8;
-        
+
         public RenderTexture WarpedSdfTexture { get; private set; }
         public RenderTexture PreciseDistanceTexture { get; private set; } // NEW: For surface contour
         public ComputeBuffer SegmentsBuffer { get; private set; }
@@ -34,13 +30,12 @@ namespace PlanetGen
         int gridResolution = 64;
         int maxSegmentsPerCell = 32;
 
-        private JumpFlooder jumpFlooder1;
+        private JumpFlooder jumpFlooder;
 
         public ComputePipeline(PlanetGenMain parent)
         {
             this.parent = parent;
 
-            // Existing shader loading
             MarchingSquaresShader = CSP.MarchingSquares.Get();
             if (MarchingSquaresShader == null)
             {
@@ -55,18 +50,7 @@ namespace PlanetGen
                 return;
             }
 
-            // NEW: Load precise distance field shader
-            preciseDistanceFieldShader = CSP.PreciseDistanceField.Get(); // Add to your CSP
-            if (preciseDistanceFieldShader == null)
-            {
-                Debug.LogError("Failed to load PreciseDistanceField shader");
-                return;
-            }
-
-            markTilesKernel = preciseDistanceFieldShader.FindKernel("CSMarkTiles");
-            distanceFieldKernel = preciseDistanceFieldShader.FindKernel("CSDistanceField");
-
-            jumpFlooder1 = new JumpFlooder();
+            jumpFlooder = new JumpFlooder();
         }
 
         public void Init(int newFieldWidth, int newTextureRes)
@@ -77,7 +61,7 @@ namespace PlanetGen
             InitBuffers(newFieldWidth, newTextureRes);
             InitPingPongPipelines();
 
-            jumpFlooder1.InitJFATextures(newTextureRes);
+            jumpFlooder.InitJFATextures(newTextureRes);
         }
 
         void InitBuffers(int fieldWidth, int textureRes)
@@ -87,8 +71,7 @@ namespace PlanetGen
             SegmentColorsBuffer?.Dispose();
             DrawArgsBuffer?.Dispose();
             SegmentCountBuffer?.Dispose();
-            activeTilesBuffer?.Dispose();
-
+            
             // Recreate buffers
             int maxSegments = fieldWidth * fieldWidth * 2;
             SegmentsBuffer = new ComputeBuffer(maxSegments, sizeof(float) * 4, ComputeBufferType.Append);
@@ -96,12 +79,6 @@ namespace PlanetGen
             SegmentCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
             DrawArgsBuffer = new ComputeBuffer(1, sizeof(int) * 4, ComputeBufferType.IndirectArguments);
             DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0 });
-
-            // NEW: Active tiles buffer for precise distance field
-            int tilesX = Mathf.CeilToInt(textureRes / (float)TILE_SIZE);
-            int tilesY = Mathf.CeilToInt(textureRes / (float)TILE_SIZE);
-            int totalTiles = tilesX * tilesY;
-            activeTilesBuffer = new ComputeBuffer(totalTiles, sizeof(uint));
 
             // Recreate textures
             if (SdfTexture != null) SdfTexture.Release();
@@ -135,7 +112,7 @@ namespace PlanetGen
         {
             var domainWarpShader = CSP.DomainWarp.Get();
             var warpKernel = CSP.DomainWarp.Kernels.Warp;
-            
+
             var gaussianBlurShader = CSP.GaussianBlur.Get();
             var blurKernel = CSP.GaussianBlur.Kernels.GaussianBlur;
 
@@ -185,14 +162,14 @@ namespace PlanetGen
             input.Textures["field"] = textures.ScalarField;
             var preprocessedResults = fieldPreprocessingPipeline.Dispatch(input);
 
-            
+
             GenerateSegments(preprocessedResults, textures);
-            
+
             GenerateSignedDistanceField(preprocessedResults.Textures["field"]);
 
-            GeneratePreciseDistanceField();
-            
-            
+            // GeneratePreciseDistanceField();
+
+
             GenerateWarpedSDF();
         }
 
@@ -220,24 +197,9 @@ namespace PlanetGen
 
         void GenerateSignedDistanceField(RenderTexture scalarField)
         {
-            // JFA for bands - can be skipped if only surface contour is needed
-            switch (parent.seedMode)
-            {
-                case 0:
-                    jumpFlooder1.GenerateSeedsFromScalarField(scalarField, 0.5f);
-                    jumpFlooder1.RunJumpFlood();
-                    jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarField, 0.5f);
-                    break;
-
-                case 1:
-                    jumpFlooder1.GenerateSeedsFromSegments(SegmentsBuffer, SegmentCountBuffer);
-                    jumpFlooder1.RunJumpFlood();
-                    jumpFlooder1.FinalizeSDF(SdfTexture, false, scalarField, 0.5f);
-                    break;
-
-                default:
-                    goto case 1;
-            }
+            jumpFlooder.GenerateSeedsFromScalarField(scalarField, 0.5f);
+            jumpFlooder.RunJumpFlood();
+            jumpFlooder.FinalizeSDF(SdfTexture, false, scalarField, 0.5f);
         }
 
         void GenerateWarpedSDF()
@@ -250,66 +212,12 @@ namespace PlanetGen
             Graphics.Blit(warpedResultTexture, WarpedSdfTexture);
         }
 
-        // NEW: Generate precise distance field from line segments
-        void GeneratePreciseDistanceField()
-        {
-            if (preciseDistanceFieldShader == null) return;
-
-            float maxLineWidth = parent.lineWidth * 0.01f; // Adjust as needed
-            int tilesX = Mathf.CeilToInt(textureResolution / (float)TILE_SIZE);
-            int tilesY = Mathf.CeilToInt(textureResolution / (float)TILE_SIZE);
-
-            // Clear active tiles buffer
-            uint[] clearData = new uint[tilesX * tilesY];
-            activeTilesBuffer.SetData(clearData);
-
-            // Pass 1: Mark tiles that intersect segments
-            preciseDistanceFieldShader.SetBuffer(markTilesKernel, "segments", SegmentsBuffer);
-            preciseDistanceFieldShader.SetBuffer(markTilesKernel, "_SegmentCount", SegmentCountBuffer);
-            preciseDistanceFieldShader.SetBuffer(markTilesKernel, "activeTiles", activeTilesBuffer);
-            preciseDistanceFieldShader.SetFloat("maxLineWidth", maxLineWidth);
-            preciseDistanceFieldShader.SetInt("TILE_SIZE", TILE_SIZE);
-            preciseDistanceFieldShader.SetInts("tilesPerAxis", new int[] { tilesX, tilesY });
-            preciseDistanceFieldShader.SetInts("textureSize", new int[] { textureResolution, textureResolution });
-
-            // Get segment count and dispatch appropriate number of threads
-            int[] segmentCountArray = new int[1];
-            SegmentCountBuffer.GetData(segmentCountArray);
-            int segmentCount = segmentCountArray[0];
-            
-            if (segmentCount > 0)
-            {
-                int markTilesThreadGroups = Mathf.CeilToInt(segmentCount / 64f);
-                preciseDistanceFieldShader.Dispatch(markTilesKernel, markTilesThreadGroups, 1, 1);
-
-                // Pass 2: Generate distance field for active tiles
-                preciseDistanceFieldShader.SetBuffer(distanceFieldKernel, "segments", SegmentsBuffer);
-                preciseDistanceFieldShader.SetBuffer(distanceFieldKernel, "_SegmentCount", SegmentCountBuffer);
-                preciseDistanceFieldShader.SetBuffer(distanceFieldKernel, "activeTiles", activeTilesBuffer);
-                preciseDistanceFieldShader.SetTexture(distanceFieldKernel, "output", PreciseDistanceTexture);
-                preciseDistanceFieldShader.SetFloat("maxLineWidth", maxLineWidth);
-                preciseDistanceFieldShader.SetInt("TILE_SIZE", TILE_SIZE);
-                preciseDistanceFieldShader.SetInts("tilesPerAxis", new int[] { tilesX, tilesY });
-                preciseDistanceFieldShader.SetInts("textureSize", new int[] { textureResolution, textureResolution });
-
-                int distanceFieldThreadGroups = Mathf.CeilToInt(tilesX / 8f);
-                preciseDistanceFieldShader.Dispatch(distanceFieldKernel, distanceFieldThreadGroups, Mathf.CeilToInt(tilesY / 8f), 1);
-            }
-            else
-            {
-                // Clear the distance texture if no segments
-                Graphics.SetRenderTarget(PreciseDistanceTexture);
-                GL.Clear(false, true, new Color(999f, 0, 0, 0));
-            }
-        }
-
         public void Dispose()
         {
             SegmentsBuffer?.Dispose();
             SegmentColorsBuffer?.Dispose();
             DrawArgsBuffer?.Dispose();
-            SegmentCountBuffer?.Dispose();
-            activeTilesBuffer?.Dispose(); // NEW
+            SegmentCountBuffer?.Dispose();`
 
             if (SdfTexture != null) SdfTexture.Release();
             if (WarpedSdfTexture != null) WarpedSdfTexture.Release();
@@ -318,7 +226,7 @@ namespace PlanetGen
             fieldPreprocessingPipeline?.Dispose();
             sdfDomainWarpPingPong?.Dispose();
 
-            jumpFlooder1?.Dispose();
+            jumpFlooder?.Dispose();
         }
     }
 }

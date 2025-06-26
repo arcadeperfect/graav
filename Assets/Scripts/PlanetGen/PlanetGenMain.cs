@@ -116,8 +116,7 @@ namespace PlanetGen
             fieldRenderer.material.SetInt("_Mode", fieldDisplayMode);
             fieldRenderer.material.SetFloat("_Alpha", fieldDisplayOpacity);
             fieldRenderer.enabled = enableFieldPreview;
-
-
+            
             RegenCompute();
         }
 
@@ -125,11 +124,11 @@ namespace PlanetGen
         {
             computePipeline.Dispatch(field_textures);
 
-
             // Set textures on the final renderer
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors);
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
             resultRenderer.material.SetTexture("_WarpedSDFTexture", computePipeline.WarpedSdfTexture);
+            // resultRenderer.material.SetTexture("_PreciseDistanceTexture", computePipeline.PreciseDistanceTexture);
 
             // Pass all parameters needed for procedural rendering to the shader
             resultRenderer.material.SetFloat("_LineWidth", lineWidth);
