@@ -126,8 +126,10 @@ namespace PlanetGen
 
             // Set textures on the final renderer
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors);
-            resultRenderer.material.SetTexture("_SDFTexture", computePipeline.SdfTexture);
+            resultRenderer.material.SetTexture("_SDFTexture", computePipeline.JumpFloodSdfTexture);
             resultRenderer.material.SetTexture("_WarpedSDFTexture", computePipeline.WarpedSdfTexture);
+            resultRenderer.material.SetTexture("_UDFTexture", computePipeline.SurfaceUdfTexture);
+            
             // resultRenderer.material.SetTexture("_PreciseDistanceTexture", computePipeline.PreciseDistanceTexture);
 
             // Pass all parameters needed for procedural rendering to the shader
@@ -141,7 +143,7 @@ namespace PlanetGen
 
 
             // Set texture for SDF preview renderer
-            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.SdfTexture);
+            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.JumpFloodSdfTexture);
             sdfRenderer.material.SetInt("_Mode", sdfDisplayMode);
             sdfRenderer.material.SetFloat("_Alpha", sdfDisplayOpacity);
             sdfRenderer.material.SetFloat("_Mult", sdfDisplayMult);

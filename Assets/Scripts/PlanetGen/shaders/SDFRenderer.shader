@@ -6,7 +6,8 @@
         _ColorTexture ("Color Texture", 2D) = "white" {}
         _SDFTexture ("Main SDF Texture (Un-Warped)", 2D) = "white" {}
         _WarpedSDFTexture("Warped SDF Texture", 2D) = "white" {}
-
+        _UDFTexture("UDF Texture", 2D) = "white" {}
+        
         // Parameters now controlled by PlanetGenMain.cs
         _LineWidth ("Main Line Width", Float) = 0.01
         _BandLineWidth ("Band Line Width", Float) = 2.0 // Now in screen-space pixels
@@ -54,6 +55,7 @@
             TEXTURE2D(_ColorTexture);
             TEXTURE2D(_SDFTexture);
             TEXTURE2D(_WarpedSDFTexture);
+            TEXTURE2D(_UDFTexture);
             SAMPLER(sampler_linear_clamp); // A generic sampler
 
             // Uniforms passed from C#
@@ -78,35 +80,22 @@
 
             half4 frag(Varyings input) : SV_Target
             {
-                // _LineWidth *= 0.1;
-                //
-                // half4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_linear_clamp, input.uv);
-                // float distance = mainSdfData.r;
-                //
-                // // Use the rate of change of distance for proper antialiasing
-                // float pixelDistance = fwidth(distance);
-                //
-                // // Create hard edge with minimal antialiasing based on pixel size
-                // float alpha = 1.0 - smoothstep(-pixelDistance * 0.5, pixelDistance * 0.5, distance - _LineWidth);
-                //
-                // return half4(1, 1, 1, alpha);
-
                 // 1. Sample the base color from the original noise field
                 half4 fieldColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_linear_clamp, input.uv);
 
-                // --- MAIN OUTLINE RENDERING (Simplified gradient compensation) ---
-                // We use the ORIGINAL, un-warped SDF so the main outline never changes.
-                half4 mainSdfData = SAMPLE_TEXTURE2D(_SDFTexture, sampler_linear_clamp, input.uv);
-                // half4 mainSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);
-                // float mainSignedDist = mainSdfData.r * mainSdfData.g;
+                // --- MAIN OUTLINE RENDERING (Using the new precise UDF) ---
+                // Sample the Unsigned Distance Field. The .r channel contains the distance
+                // to the nearest segment in normalized UV space [0, 1].
+                float udfDistance = SAMPLE_TEXTURE2D(_UDFTexture, sampler_linear_clamp, input.uv).r;
 
-                // Simplified approach: use fwidth for anti-aliasing but keep _LineWidth as direct threshold
-                float mainGrad = max(fwidth(mainSdfData.r), 1e-6);
-                float adjustedLineWidth = _LineWidth * 0.01;
-                float outlineAlpha = 1.0 - smoothstep(adjustedLineWidth, adjustedLineWidth + mainGrad,
-                                                      abs(mainSdfData.r));
+                // Use screen-space derivatives (fwidth) for consistent anti-aliasing at any scale
+                float pixelWidth = fwidth(udfDistance);
+                
+                // _LineWidth is a normalized value.
+                float lineAlpha = 1.0 - smoothstep(_LineWidth - pixelWidth, _LineWidth + pixelWidth, udfDistance);
 
-                // --- PROCEDURAL BAND RENDERING (With gradient compensation) ---
+
+                // --- PROCEDURAL BAND RENDERING (Using warped JFA SDF) ---
                 half4 warpedSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);
                 float warpedSignedDist = warpedSdfData.r * warpedSdfData.g;
 
@@ -122,7 +111,7 @@
                         float distToBand = abs(warpedSignedDist - bandIso);
                         float correctedDist = distToBand / grad_mag;
 
-                        // _BandLineWidth is now in pixels!
+                        // _BandLineWidth is in pixels
                         float band = 1.0 - smoothstep(_BandLineWidth, _BandLineWidth + 1.5, correctedDist);
                         bandMask = max(bandMask, band);
                     }
@@ -136,8 +125,8 @@
                 finalColor.a = max(finalColor.a, bandMask);
 
                 // Add main outline on top
-                finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb, outlineAlpha);
-                finalColor.a = max(finalColor.a, outlineAlpha);
+                finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb, lineAlpha);
+                finalColor.a = max(finalColor.a, lineAlpha);
 
                 if (finalColor.a < 0.01)
                 {
@@ -146,6 +135,59 @@
 
                 return finalColor;
             }
+
+            // half4 frag(Varyings input) : SV_Target
+            // {
+            //
+            //     half4 fieldColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_linear_clamp, input.uv);
+            //
+            //     half4 mainSdfData = SAMPLE_TEXTURE2D(_UDFTexture, sampler_linear_clamp, input.uv);
+            //   
+            //     float mainGrad = max(fwidth(mainSdfData.r), 1e-6);
+            //     float adjustedLineWidth = _LineWidth * 0.01;
+            //     float outlineAlpha = 1.0 - smoothstep(adjustedLineWidth, adjustedLineWidth + mainGrad,
+            //                                           abs(mainSdfData.r));
+            //
+            //     // --- PROCEDURAL BAND RENDERING (With gradient compensation) ---
+            //     half4 warpedSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);
+            //     float warpedSignedDist = warpedSdfData.r * warpedSdfData.g;
+            //
+            //     float bandMask = 0;
+            //     if (warpedSignedDist < 0)
+            //     {
+            //         float grad_mag = fwidth(warpedSignedDist);
+            //         if (grad_mag == 0.0) { grad_mag = 1e-6; }
+            //
+            //         for (int j = 0; j < _NumberOfBands; j++)
+            //         {
+            //             float bandIso = _BandStartOffset + (j * _BandInterval);
+            //             float distToBand = abs(warpedSignedDist - bandIso);
+            //             float correctedDist = distToBand / grad_mag;
+            //
+            //             // _BandLineWidth is now in pixels!
+            //             float band = 1.0 - smoothstep(_BandLineWidth, _BandLineWidth + 1.5, correctedDist);
+            //             bandMask = max(bandMask, band);
+            //         }
+            //     }
+            //
+            //     // --- COMPOSITING ---
+            //     half4 finalColor = half4(fieldColor.rgb, 0);
+            //
+            //     // Add bands first (darkened)
+            //     finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb * 0.7, bandMask);
+            //     finalColor.a = max(finalColor.a, bandMask);
+            //
+            //     // Add main outline on top
+            //     finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb, outlineAlpha);
+            //     finalColor.a = max(finalColor.a, outlineAlpha);
+            //
+            //     if (finalColor.a < 0.01)
+            //     {
+            //         discard;
+            //     }
+            //
+            //     return finalColor;
+            // }
             ENDHLSL
         }
     }

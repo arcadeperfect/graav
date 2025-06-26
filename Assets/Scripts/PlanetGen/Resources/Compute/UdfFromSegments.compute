@@ -1,0 +1,131 @@
+#pragma kernel PrepareArgs
+#pragma kernel BuildGrid
+#pragma kernel GenerateUDFFromGrid
+
+// A single line segment, defined by two points in [-1, 1] space.
+struct Segment
+{
+    float2 p1;
+    float2 p2;
+};
+
+StructuredBuffer<Segment> _SegmentsBuffer;
+StructuredBuffer<uint> _SegmentCountBuffer;
+
+RWStructuredBuffer<uint2> _GridIndicesBuffer;
+RWStructuredBuffer<uint> _GridCellsBuffer;
+RWTexture2D<float> _UDFTexture;
+RWStructuredBuffer<uint> _ArgsBuffer;
+
+// --- Uniforms ---
+uint _GridResolution;    
+uint _MaxSegmentsPerCell; 
+uint _TextureResolution; 
+
+// Helper function to calculate distance from point 'p' to segment 'a'-'b'.
+// All inputs are expected to be in the same coordinate space (e.g., pixels).
+float distToSegment(float2 p, float2 a, float2 b)
+{
+    float2 ba = b - a;
+    float2 pa = p - a;
+    float h = saturate(dot(pa, ba) / dot(ba, ba));
+    return length(pa - ba * h);
+}
+
+// KERNEL 0: PrepareArgs
+[numthreads(1, 1, 1)]
+void PrepareArgs(uint3 id : SV_DispatchThreadID)
+{
+    uint segmentCount = _SegmentCountBuffer[0];
+    _ArgsBuffer[0] = (segmentCount + 63) / 64; 
+    _ArgsBuffer[1] = 1;
+    _ArgsBuffer[2] = 1;
+}
+
+// KERNEL 1: BuildGrid
+[numthreads(64, 1, 1)]
+void BuildGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint segmentCount = _SegmentCountBuffer[0];
+    if (id.x >= segmentCount) return; 
+
+    Segment s = _SegmentsBuffer[id.x];
+
+    // --- FIX: Convert segment coordinates from [-1, 1] to [0, 1] UV space for binning ---
+    float2 p1_uv = s.p1 * 0.5 + 0.5;
+    float2 p2_uv = s.p2 * 0.5 + 0.5;
+
+    float2 min_uv = min(p1_uv, p2_uv);
+    float2 max_uv = max(p1_uv, p2_uv);
+
+    uint2 min_cell = (uint2)(min_uv * _GridResolution);
+    uint2 max_cell = (uint2)(max_uv * _GridResolution);
+
+    for (uint y = min_cell.y; y <= max_cell.y; y++)
+    {
+        for (uint x = min_cell.x; x <= max_cell.x; x++)
+        {
+            if (x >= _GridResolution || y >= _GridResolution) continue;
+
+            uint cell_1d_index = y * _GridResolution + x;
+            
+            uint slot_index;
+            InterlockedAdd(_GridIndicesBuffer[cell_1d_index].y, 1, slot_index);
+
+            if (slot_index < _MaxSegmentsPerCell)
+            {
+                _GridCellsBuffer[cell_1d_index * _MaxSegmentsPerCell + slot_index] = id.x;
+            }
+        }
+    }
+}
+
+// KERNEL 2: GenerateUDFFromGrid
+[numthreads(8, 8, 1)]
+void GenerateUDFFromGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution) return;
+
+    // The current pixel's coordinate in [0, 1] UV space.
+    float2 uv = (id.xy + 0.5) / _TextureResolution;
+    // The grid cell this pixel belongs to.
+    int2 center_cell = (int2)(uv * _GridResolution);
+
+    float min_dist = 1e6; 
+
+    for (int j = -1; j <= 1; j++)
+    {
+        for (int i = -1; i <= 1; i++)
+        {
+            int2 cell_coord = center_cell + int2(i, j);
+
+            if (cell_coord.x < 0 || cell_coord.x >= _GridResolution ||
+                cell_coord.y < 0 || cell_coord.y >= _GridResolution)
+            {
+                continue;
+            }
+
+            uint cell_1d_index = cell_coord.y * _GridResolution + cell_coord.x;
+            uint2 cell_data = _GridIndicesBuffer[cell_1d_index];
+            uint segment_count_in_cell = min(cell_data.y, _MaxSegmentsPerCell);
+            
+            uint cell_start_offset = cell_1d_index * _MaxSegmentsPerCell;
+
+            for (uint k = 0; k < segment_count_in_cell; k++)
+            {
+                uint segment_index = _GridCellsBuffer[cell_start_offset + k];
+                Segment s = _SegmentsBuffer[segment_index];
+
+                // --- FIX: Convert segment from [-1, 1] space to output texture's pixel space ---
+                float2 p1_pixels = (s.p1 * 0.5 + 0.5) * _TextureResolution;
+                float2 p2_pixels = (s.p2 * 0.5 + 0.5) * _TextureResolution;
+                
+                // Now, id.xy and the segment points are in the same coordinate space.
+                min_dist = min(min_dist, distToSegment(id.xy, p1_pixels, p2_pixels));
+            }
+        }
+    }
+
+    // Normalize the final distance (in pixels) to a [0, 1] range for the shader.
+    _UDFTexture[id.xy] = min_dist / _TextureResolution;
+}

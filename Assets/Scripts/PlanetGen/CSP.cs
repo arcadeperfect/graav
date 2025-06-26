@@ -269,6 +269,7 @@ namespace PlanetGen
         private static readonly Dictionary<string, int> _kernelCache = 
             new Dictionary<string, int>();
 
+        // ReSharper disable Unity.PerformanceAnalysis
         /// <summary>
         /// Internal method to get shader by path with caching
         /// </summary>
@@ -389,7 +390,7 @@ namespace PlanetGen
             private const string ShaderPath = "Compute/pingPong1/domainWarp";
             private const string DisplayName = "Domain Warp";
 
-            public static ComputeShader Get()
+            public static ComputeShader GetShader()
             {
                 return GetShaderInternal(ShaderPath, DisplayName);
             }
@@ -405,7 +406,7 @@ namespace PlanetGen
             private const string ShaderPath = "Compute/pingPong1/gaussianBlur";
             private const string DisplayName = "Gaussian Blur";
 
-            public static ComputeShader Get()
+            public static ComputeShader GetShader()
             {
                 return GetShaderInternal(ShaderPath, DisplayName);
             }
@@ -416,21 +417,19 @@ namespace PlanetGen
             }
         }
 
-        public static class PreciseDistanceField
+        public static class UdfFromSegments
         {
-            private const string ShaderPath = "Compute/SegmentsToLocalUDF";
+            private const string ShaderPath = "Compute/UdfFromSegments";
             private const string DisplayName = "Segments To Local UDF";
 
-            public static ComputeShader Get()
+            public static ComputeShader GetShader()
             {
                 return GetShaderInternal(ShaderPath, DisplayName);
             }
 
             public static class Kernels
             {
-                public static int CSMarkTiles  => GetKernelInternal(ShaderPath, "CSMarkTiles", DisplayName);
-                public static int CSDistanceField  => GetKernelInternal(ShaderPath, "CSDistanceField", DisplayName);
-                
+
             }
         }
     }

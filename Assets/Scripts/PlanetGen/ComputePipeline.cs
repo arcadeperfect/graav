@@ -10,25 +10,28 @@ namespace PlanetGen
         private ComputeShader MarchingSquaresShader;
         private PingPongPipeline fieldPreprocessingPipeline; // Renamed and enhanced
         private PingPongPipeline sdfDomainWarpPingPong;
+        private UdfFromSegments udfGen;
 
         private int markTilesKernel;
         private int distanceFieldKernel;
 
-        private const int TILE_SIZE = 8;
-
-        public RenderTexture WarpedSdfTexture { get; private set; }
-        public RenderTexture PreciseDistanceTexture { get; private set; } // NEW: For surface contour
+        
         public ComputeBuffer SegmentsBuffer { get; private set; }
         public ComputeBuffer SegmentColorsBuffer { get; private set; }
         public ComputeBuffer SegmentCountBuffer { get; private set; }
         public ComputeBuffer DrawArgsBuffer { get; private set; }
-        public RenderTexture SdfTexture { get; private set; } // Keep for bands
+        
+        public RenderTexture JumpFloodSdfTexture { get; private set; } // Keep for bands
+        public RenderTexture WarpedSdfTexture { get; private set; }
+        public RenderTexture SurfaceUdfTexture { get; private set; }
 
         private int fieldResolution;
         private int textureResolution;
 
         int gridResolution = 64;
         int maxSegmentsPerCell = 32;
+        
+        
 
         private JumpFlooder jumpFlooder;
 
@@ -51,6 +54,9 @@ namespace PlanetGen
             }
 
             jumpFlooder = new JumpFlooder();
+            
+            udfGen = new UdfFromSegments(gridResolution, maxSegmentsPerCell);
+
         }
 
         public void Init(int newFieldWidth, int newTextureRes)
@@ -62,6 +68,7 @@ namespace PlanetGen
             InitPingPongPipelines();
 
             jumpFlooder.InitJFATextures(newTextureRes);
+            udfGen.Init();
         }
 
         void InitBuffers(int fieldWidth, int textureRes)
@@ -81,46 +88,48 @@ namespace PlanetGen
             DrawArgsBuffer.SetData(new int[] { 0, 1, 0, 0 });
 
             // Recreate textures
-            if (SdfTexture != null) SdfTexture.Release();
-            SdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBHalf)
+            if (JumpFloodSdfTexture) JumpFloodSdfTexture.Release();
+            JumpFloodSdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBHalf)
             {
                 enableRandomWrite = true,
                 filterMode = FilterMode.Bilinear
             };
-            SdfTexture.Create();
-
-            // NEW: Precise distance texture for surface contour
-            if (PreciseDistanceTexture != null) PreciseDistanceTexture.Release();
-            PreciseDistanceTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.RFloat)
-            {
-                enableRandomWrite = true,
-                filterMode = FilterMode.Bilinear
-            };
-            PreciseDistanceTexture.Create();
+            JumpFloodSdfTexture.Create();
+            
 
             // Warped SDF for bands
-            if (WarpedSdfTexture != null) WarpedSdfTexture.Release();
+            if (WarpedSdfTexture) WarpedSdfTexture.Release();
             WarpedSdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.ARGBHalf)
             {
                 enableRandomWrite = true,
                 filterMode = FilterMode.Bilinear
             };
             WarpedSdfTexture.Create();
+            
+            if (SurfaceUdfTexture) SurfaceUdfTexture.Release();
+            SurfaceUdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.RFloat)
+            {
+                enableRandomWrite = true,
+                filterMode = FilterMode.Bilinear
+            };
+            SurfaceUdfTexture.Create();
         }
+
 
         void InitPingPongPipelines()
         {
-            var domainWarpShader = CSP.DomainWarp.Get();
+            var domainWarpShader = CSP.DomainWarp.GetShader();
             var warpKernel = CSP.DomainWarp.Kernels.Warp;
 
-            var gaussianBlurShader = CSP.GaussianBlur.Get();
+            var gaussianBlurShader = CSP.GaussianBlur.GetShader();
             var blurKernel = CSP.GaussianBlur.Kernels.GaussianBlur;
 
-            if (domainWarpShader == null || gaussianBlurShader == null)
+            if (!domainWarpShader || !gaussianBlurShader)
             {
                 Debug.LogError("Failed to load shaders for field preprocessing pipeline");
                 return;
             }
+            
 
             fieldPreprocessingPipeline = new PingPongPipeline()
                 .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
@@ -167,12 +176,17 @@ namespace PlanetGen
 
             GenerateSignedDistanceField(preprocessedResults.Textures["field"]);
 
-            // GeneratePreciseDistanceField();
-
-
             GenerateWarpedSDF();
+            
+            GenerateSurfaceUDF();
+
         }
 
+        /// <summary>
+        /// Generate line segments from the scalar field using marching squares
+        /// </summary>
+        /// <param name="preprocessedResults"></param>
+        /// <param name="textures"></param>
         void GenerateSegments(ComputeResources preprocessedResults, FieldGen.FieldData textures)
         {
             var msShader = MarchingSquaresShader;
@@ -195,38 +209,59 @@ namespace PlanetGen
             ComputeBuffer.CopyCount(SegmentsBuffer, SegmentCountBuffer, 0);
         }
 
+        /// <summary>
+        /// Use jump flood to create a SDF directly from the scalar field
+        /// Bypasses the segments from marching squares
+        /// Is fast, but results in low quality surface contours if the texture res is higher than the field res
+        /// </summary>
+        /// <param name="scalarField"></param>
         void GenerateSignedDistanceField(RenderTexture scalarField)
         {
             jumpFlooder.GenerateSeedsFromScalarField(scalarField, 0.5f);
             jumpFlooder.RunJumpFlood();
-            jumpFlooder.FinalizeSDF(SdfTexture, false, scalarField, 0.5f);
+            jumpFlooder.FinalizeSDF(JumpFloodSdfTexture, false, scalarField, 0.5f);
         }
 
+        /// <summary>
+        /// Apply domain warping to the course SDF to create interesting interior bands
+        /// </summary>
         void GenerateWarpedSDF()
         {
             var sdfInput = new ComputeResources();
-            sdfInput.Textures["field"] = SdfTexture;
+            sdfInput.Textures["field"] = JumpFloodSdfTexture;
 
             var warpedSdfResults = sdfDomainWarpPingPong.Dispatch(sdfInput);
-            var warpedResultTexture = warpedSdfResults.Textures["field"];
-            Graphics.Blit(warpedResultTexture, WarpedSdfTexture);
+            
+            if (WarpedSdfTexture != null && WarpedSdfTexture != warpedSdfResults.Textures["field"])
+                WarpedSdfTexture.Release();
+            
+            WarpedSdfTexture = warpedSdfResults.Textures["field"];
         }
 
+        void GenerateSurfaceUDF()
+        {
+            // Graphics.Blit(JumpFloodSdfTexture, SurfaceUdfTexture);
+            
+            udfGen.GenerateUdf(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
+        }
+        
         public void Dispose()
         {
             SegmentsBuffer?.Dispose();
             SegmentColorsBuffer?.Dispose();
             DrawArgsBuffer?.Dispose();
-            SegmentCountBuffer?.Dispose();`
+            SegmentCountBuffer?.Dispose();
 
-            if (SdfTexture != null) SdfTexture.Release();
+            if (JumpFloodSdfTexture != null) JumpFloodSdfTexture.Release();
             if (WarpedSdfTexture != null) WarpedSdfTexture.Release();
-            if (PreciseDistanceTexture != null) PreciseDistanceTexture.Release(); // NEW
+            
 
             fieldPreprocessingPipeline?.Dispose();
             sdfDomainWarpPingPong?.Dispose();
 
             jumpFlooder?.Dispose();
+            udfGen?.Dispose();
+
         }
     }
 }
