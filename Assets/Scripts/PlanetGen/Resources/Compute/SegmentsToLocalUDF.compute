@@ -1,0 +1,81 @@
+#pragma kernel CSMarkTiles
+#pragma kernel CSDistanceField
+
+StructuredBuffer<float4> segments;
+StructuredBuffer<int> _SegmentCount;
+RWStructuredBuffer<uint> activeTiles;
+RWTexture2D<float> output; // Changed to float
+float maxLineWidth;
+int TILE_SIZE;
+uint2 tilesPerAxis; // Changed to uint2
+uint2 textureSize;  // Changed to uint2
+
+[numthreads(64,1,1)]
+void CSMarkTiles(uint3 id : SV_DispatchThreadID)
+{
+    int segmentCount = _SegmentCount[0];
+    uint segmentIndex = id.x;
+    if(segmentIndex >= segmentCount) return;
+    
+    float4 seg = segments[segmentIndex];
+    float2 p0 = seg.xy, p1 = seg.zw;
+    
+    float2 minP = min(p0, p1) - maxLineWidth;
+    float2 maxP = max(p0, p1) + maxLineWidth;
+    
+    uint2 minTile = uint2(max(0, minP / TILE_SIZE));
+    uint2 maxTile = uint2(min(int2(tilesPerAxis) - 1, maxP / TILE_SIZE));
+    
+    for(uint y = minTile.y; y <= maxTile.y; y++) {
+        for(uint x = minTile.x; x <= maxTile.x; x++) {
+            uint tileIdx = y * tilesPerAxis.x + x;
+            InterlockedOr(activeTiles[tileIdx], 1u);
+        }
+    }
+}
+
+[numthreads(8,8,1)]
+void CSDistanceField(uint3 id : SV_DispatchThreadID)
+{
+    int segmentCount = _SegmentCount[0];
+    uint2 tileCoord = id.xy;
+    
+    if(any(tileCoord >= tilesPerAxis)) return; // Bounds check
+    
+    uint tileIdx = tileCoord.y * tilesPerAxis.x + tileCoord.x;
+    if(activeTiles[tileIdx] == 0) return;
+    
+    uint2 pixelBase = tileCoord * TILE_SIZE;
+    
+    for(uint y = 0; y < TILE_SIZE; y++) {
+        for(uint x = 0; x < TILE_SIZE; x++) {
+            uint2 pixel = pixelBase + uint2(x, y);
+            if(any(pixel >= textureSize)) continue;
+            
+            float2 pos = pixel + 0.5;
+            float minDist = 999.0;
+            
+            for(uint i = 0; i < segmentCount; i++) {
+                float4 seg = segments[i];
+                
+                float2 segMin = min(seg.xy, seg.zw) - maxLineWidth;
+                float2 segMax = max(seg.xy, seg.zw) + maxLineWidth;
+                float2 tileMin = pixelBase;
+                float2 tileMax = pixelBase + TILE_SIZE;
+                
+                if(any(segMax < tileMin) || any(segMin > tileMax)) continue;
+                
+                float2 pa = pos - seg.xy;
+                float2 ba = seg.zw - seg.xy;
+                float baDot = dot(ba, ba);
+                float h = baDot > 0.0 ? saturate(dot(pa, ba) / baDot) : 0.0;
+                float dist = length(pa - ba * h);
+                
+                minDist = min(minDist, dist);
+                if(dist < 1.0) break;
+            }
+            
+            output[pixel] = minDist;
+        }
+    }
+}

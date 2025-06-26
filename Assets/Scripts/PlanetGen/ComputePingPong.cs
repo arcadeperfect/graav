@@ -979,6 +979,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace PlanetGen
 {
@@ -1005,7 +1006,8 @@ namespace PlanetGen
     public class ComputeStep
     {
         public ComputeShader Shader { get; set; }
-        public string KernelName { get; set; }
+        // public string KernelName { get; set; }
+        public int KernelId { get; set; }
         public Func<int> IterationsProvider { get; set; } = () => 1;
         public Dictionary<string, Func<float>> FloatParams { get; set; } = new();
         public Dictionary<string, Func<int>> IntParams { get; set; } = new();
@@ -1013,10 +1015,10 @@ namespace PlanetGen
         // Helper property for when iterations are accessed
         public int Iterations => IterationsProvider();
 
-        public ComputeStep(ComputeShader shader, string kernelName)
+        public ComputeStep(ComputeShader shader, int kernel)
         {
             Shader = shader;
-            KernelName = kernelName;
+            KernelId = kernel;
         }
 
         public ComputeStep WithIterations(int iterations)
@@ -1086,9 +1088,9 @@ namespace PlanetGen
             return this;
         }
 
-        public PingPongPipeline AddStep(ComputeShader shader, string kernelName, Action<ComputeStep> configure = null)
+        public PingPongPipeline AddStep(ComputeShader shader, int kernelID, Action<ComputeStep> configure = null)
         {
-            var step = new ComputeStep(shader, kernelName);
+            var step = new ComputeStep(shader, kernelID);
             configure?.Invoke(step);
             steps.Add(step);
             return this;
@@ -1209,8 +1211,12 @@ namespace PlanetGen
 
         private void ExecuteStep(ComputeStep step, ComputeResources input, ComputeResources output, int iteration)
         {
-            var kernel = step.Shader.FindKernel(step.KernelName);
-
+            // Debug.Log(step.Shader);
+            
+            
+            // var kernel = step.Shader.FindKernel(step.KernelName);
+            var kernel = step.KernelId;
+            
             // Bind input resources
             foreach (var buffer in input.Buffers)
                 step.Shader.SetBuffer(kernel, buffer.Key + "_in", buffer.Value);
