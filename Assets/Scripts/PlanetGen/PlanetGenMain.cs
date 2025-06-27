@@ -5,11 +5,11 @@ namespace PlanetGen
 {
     public class PlanetGenMain : MonoBehaviour
     {
-        [Header("Field Generation")] [TriggerFieldRegen] [Min(2)]
+        [Header("Field Generation")] [TriggerFieldRegen]
         public int scalarFieldWidth;
 
         [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
-        [Range(0, 10f)] [TriggerFieldRegen] public float amplitude = 0.5f;
+        [Range(0, 50f)] [TriggerFieldRegen] public float amplitude = 0.5f;
         [Range(0, 10f)] [TriggerFieldRegen] public float frequency = 0.5f;
         [Range(0, 5)] [TriggerFieldRegen] public int blur;
 
@@ -36,9 +36,11 @@ namespace PlanetGen
         [TriggerComputeRegen] public float sdfDisplayOpacity = 1f;
         [TriggerComputeRegen] public float sdfDisplayMult = 1f;
 
-        [Header("Generation")] [TriggerComputeRegen]
-        public int textureRes = 1024;
-
+        [Header("Generation")] 
+        [TriggerBufferReInit] public int textureRes = 1024;
+        public bool bruteForce = false;
+        [TriggerBufferReInit] public int gridResolution;
+        [TriggerBufferReInit] public int maxSegmentsPerCell;
         [Range(0, 1f)] [TriggerComputeRegen] public float lineWidth;
         [Range(0, 2)] [TriggerComputeRegen] public int seedMode;
 
@@ -52,8 +54,8 @@ namespace PlanetGen
         [Header("Bands")] [TriggerComputeRegen]
         public int numberOfBands = 5;
 
-        [TriggerComputeRegen] public float bandStartOffset = -0.05f;
-        [TriggerComputeRegen] public float bandInterval = 0.02f;
+        [Range(-0.5f, 0.5f)][TriggerComputeRegen] public float bandStartOffset = -0.05f;
+        [Range(-0.5f, 0.5f)][TriggerComputeRegen] public float bandInterval = 0.02f;
 
         [Header("Debug")] public bool enableDebugDraw = false;
         public Color debugLineColor = Color.red;
@@ -82,16 +84,23 @@ namespace PlanetGen
         {
             var changes = paramWatcher.CheckForChanges();
 
+            
             if (changes.HasFieldRegen())
             {
-                computePipeline.Init(scalarFieldWidth, textureRes);
+                computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
                 RegenField(); // This includes compute regen
             }
             else if (changes.HasComputeRegen() || computeConstantly)
             {
                 RegenCompute();
             }
-
+            
+            if (changes.HasBufferReInit())
+            {
+                computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
+                RegenCompute();
+            }
+            
             if (enableDebugDraw)
             {
                 DebugDrawMarchingSquaresBuffer();
@@ -103,14 +112,14 @@ namespace PlanetGen
             field_textures = new FieldGen.FieldData(scalarFieldWidth);
             fieldGen = new FieldGen();
             computePipeline = new ComputePipeline(this);
-            computePipeline.Init(scalarFieldWidth, textureRes);
+            computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
         }
 
 
         void RegenField()
         {
             fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, scalarFieldWidth, blur);
-            computePipeline.Init(scalarFieldWidth, textureRes);
+            computePipeline.Init(scalarFieldWidth, textureRes, gridResolution,  maxSegmentsPerCell);
             fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarField);
             fieldRenderer.material.SetTexture("_ColorTex", field_textures.Colors);
             fieldRenderer.material.SetInt("_Mode", fieldDisplayMode);
@@ -122,7 +131,7 @@ namespace PlanetGen
 
         void RegenCompute()
         {
-            computePipeline.Dispatch(field_textures);
+            computePipeline.Dispatch(field_textures, gridResolution);
 
             // Set textures on the final renderer
             resultRenderer.material.SetTexture("_ColorTexture", field_textures.Colors);
@@ -133,8 +142,8 @@ namespace PlanetGen
             // resultRenderer.material.SetTexture("_PreciseDistanceTexture", computePipeline.PreciseDistanceTexture);
 
             // Pass all parameters needed for procedural rendering to the shader
-            resultRenderer.material.SetFloat("_LineWidth", lineWidth);
-            resultRenderer.material.SetFloat("_BandLineWidth", lineWidth * 0.5f);
+            resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.01f);
+            resultRenderer.material.SetFloat("_BandLineWidth", lineWidth * 0.01f);
             resultRenderer.material.SetInt("_NumberOfBands", numberOfBands);
             resultRenderer.material.SetFloat("_BandStartOffset", bandStartOffset);
             resultRenderer.material.SetFloat("_BandInterval", bandInterval);
@@ -143,7 +152,7 @@ namespace PlanetGen
 
 
             // Set texture for SDF preview renderer
-            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.JumpFloodSdfTexture);
+            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.SurfaceUdfTexture);
             sdfRenderer.material.SetInt("_Mode", sdfDisplayMode);
             sdfRenderer.material.SetFloat("_Alpha", sdfDisplayOpacity);
             sdfRenderer.material.SetFloat("_Mult", sdfDisplayMult);

@@ -80,59 +80,81 @@
 
             half4 frag(Varyings input) : SV_Target
             {
+            
+                // float t = SAMPLE_TEXTURE2D(_UDFTexture, sampler_linear_clamp, input.uv).r;
+                // // float pixelWidth = 0.0001;
+                // // float u = smoothstep(_LineWidth - pixelWidth, _LineWidth + pixelWidth, t);
+                // float w = fwidth(t);
+                // float u = 0;
+                // if (w < 1)
+                // {
+                //      u = 1.0 - smoothstep(_LineWidth - w, _LineWidth + w, t);
+                // }
+                // // float u = 0;
+                // // if (t < _LineWidth)
+                // // {
+                // //     u = 1;
+                // // }
+                //
+                // return half4(u,u,u,1);
+            // }
+                
                 // 1. Sample the base color from the original noise field
                 half4 fieldColor = SAMPLE_TEXTURE2D(_ColorTexture, sampler_linear_clamp, input.uv);
-
+            
                 // --- MAIN OUTLINE RENDERING (Using the new precise UDF) ---
                 // Sample the Unsigned Distance Field. The .r channel contains the distance
                 // to the nearest segment in normalized UV space [0, 1].
                 float udfDistance = SAMPLE_TEXTURE2D(_UDFTexture, sampler_linear_clamp, input.uv).r;
-
+            
                 // Use screen-space derivatives (fwidth) for consistent anti-aliasing at any scale
                 float pixelWidth = fwidth(udfDistance);
                 
                 // _LineWidth is a normalized value.
-                float lineAlpha = 1.0 - smoothstep(_LineWidth - pixelWidth, _LineWidth + pixelWidth, udfDistance);
-
-
+                float lineAlpha = 0;
+                if (pixelWidth < 1)
+                {
+                    lineAlpha = 1.0 - smoothstep(_LineWidth - pixelWidth, _LineWidth + pixelWidth, udfDistance);
+                }
+            
                 // --- PROCEDURAL BAND RENDERING (Using warped JFA SDF) ---
                 half4 warpedSdfData = SAMPLE_TEXTURE2D(_WarpedSDFTexture, sampler_linear_clamp, input.uv);
                 float warpedSignedDist = warpedSdfData.r * warpedSdfData.g;
-
+            
                 float bandMask = 0;
                 if (warpedSignedDist < 0)
                 {
                     float grad_mag = fwidth(warpedSignedDist);
                     if (grad_mag == 0.0) { grad_mag = 1e-6; }
-
+            
                     for (int j = 0; j < _NumberOfBands; j++)
                     {
                         float bandIso = _BandStartOffset + (j * _BandInterval);
                         float distToBand = abs(warpedSignedDist - bandIso);
                         float correctedDist = distToBand / grad_mag;
-
+            
                         // _BandLineWidth is in pixels
                         float band = 1.0 - smoothstep(_BandLineWidth, _BandLineWidth + 1.5, correctedDist);
                         bandMask = max(bandMask, band);
                     }
                 }
-
+            
                 // --- COMPOSITING ---
                 half4 finalColor = half4(fieldColor.rgb, 0);
-
+            
                 // Add bands first (darkened)
                 finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb * 0.7, bandMask);
                 finalColor.a = max(finalColor.a, bandMask);
-
+            
                 // Add main outline on top
                 finalColor.rgb = lerp(finalColor.rgb, fieldColor.rgb, lineAlpha);
                 finalColor.a = max(finalColor.a, lineAlpha);
-
+            
                 if (finalColor.a < 0.01)
                 {
                     discard;
                 }
-
+            
                 return finalColor;
             }
 

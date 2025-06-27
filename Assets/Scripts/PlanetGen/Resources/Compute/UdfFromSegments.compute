@@ -1,6 +1,7 @@
 #pragma kernel PrepareArgs
 #pragma kernel BuildGrid
 #pragma kernel GenerateUDFFromGrid
+#pragma kernel GenerateUDF_BruteForce
 
 // A single line segment, defined by two points in [-1, 1] space.
 struct Segment
@@ -127,5 +128,47 @@ void GenerateUDFFromGrid(uint3 id : SV_DispatchThreadID)
     }
 
     // Normalize the final distance (in pixels) to a [0, 1] range for the shader.
+    _UDFTexture[id.xy] = min_dist / _TextureResolution;
+}
+
+// =======================================================================
+// KERNEL 3: GenerateUDF_BruteForce (for testing)
+// =======================================================================
+[numthreads(8, 8, 1)]
+void GenerateUDF_BruteForce(uint3 id : SV_DispatchThreadID)
+{
+    // Exit if the thread is out of the texture bounds.
+    if (id.x >= _TextureResolution || id.y >= _TextureResolution)
+    {
+        return;
+    }
+
+    // Read the total number of segments from the count buffer.
+    uint segmentCount = _SegmentCountBuffer[0];
+
+    // If there are no segments at all, write a huge distance and exit.
+    if (segmentCount == 0)
+    {
+        _UDFTexture[id.xy] = 1e6;
+        return;
+    }
+
+    float min_dist = 1e6f; // Start with a very large distance.
+
+    // --- The Brute-Force Loop ---
+    // Iterate through EVERY segment for EVERY pixel.
+    for (uint i = 0; i < segmentCount; i++)
+    {
+        Segment s = _SegmentsBuffer[i];
+
+        // Convert the segment's [-1, 1] coordinates into the output texture's pixel space.
+        float2 p1_pixels = (s.p1 * 0.5 + 0.5) * _TextureResolution;
+        float2 p2_pixels = (s.p2 * 0.5 + 0.5) * _TextureResolution;
+
+        // Calculate the distance from the current pixel (id.xy) to the transformed segment.
+        min_dist = min(min_dist, distToSegment(id.xy, p1_pixels, p2_pixels));
+    }
+
+    // Normalize the final distance (in pixels) to a [0, 1] range and write it to the texture.
     _UDFTexture[id.xy] = min_dist / _TextureResolution;
 }

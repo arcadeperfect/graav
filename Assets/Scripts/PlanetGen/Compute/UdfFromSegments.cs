@@ -8,14 +8,18 @@ namespace PlanetGen
         private ComputeShader _udfShader;
         private int _buildGridKernel;
         private int _generateUdfKernel;
+        private int _generateUdfBruteForceKernel; 
 
         private ComputeBuffer _gridIndicesBuffer;
         private ComputeBuffer _gridCellsBuffer;
+        
+
 
         private int _gridResolution;
         private int _maxSegmentsPerCell;
 
-        public UdfFromSegments(int gridResolution = 64, int maxSegmentsPerCell = 32)
+        // public UdfFromSegments(int gridResolution, int maxSegmentsPerCell)
+        public UdfFromSegments()
         {
             _udfShader = CSP.UdfFromSegments.GetShader(); // Assumes a provider like in your example
             if (_udfShader == null)
@@ -26,25 +30,35 @@ namespace PlanetGen
             
             _buildGridKernel = _udfShader.FindKernel("BuildGrid");
             _generateUdfKernel = _udfShader.FindKernel("GenerateUDFFromGrid");
+            _generateUdfBruteForceKernel = _udfShader.FindKernel("GenerateUDF_BruteForce");
 
-            this._gridResolution = gridResolution;
-            this._maxSegmentsPerCell = maxSegmentsPerCell;
+            
+            // this._gridResolution = gridResolution;
+            // this._maxSegmentsPerCell = maxSegmentsPerCell;
         }
 
-        public void Init()
+        public void Init(int gridResolution, int maxSegmentsPerCell)
         {
+            if (gridResolution < 4 || maxSegmentsPerCell < 1)
+            {
+                Debug.LogError("Invalid grid resolution!");
+                return;
+            }
+            
+            this._maxSegmentsPerCell = maxSegmentsPerCell;
+            this._gridResolution = gridResolution;
+            
             // Each cell needs a uint2 (startIndex, count)
             _gridIndicesBuffer?.Dispose();
-            _gridIndicesBuffer = new ComputeBuffer(_gridResolution * _gridResolution, sizeof(uint) * 2, ComputeBufferType.Default);
+            _gridIndicesBuffer = new ComputeBuffer(gridResolution * gridResolution, sizeof(uint) * 2, ComputeBufferType.Default);
 
             // Each cell can store up to _maxSegmentsPerCell segment indices (uint)
             _gridCellsBuffer?.Dispose();
-            _gridCellsBuffer = new ComputeBuffer(_gridResolution * _gridResolution * _maxSegmentsPerCell, sizeof(uint), ComputeBufferType.Default);
+            _gridCellsBuffer = new ComputeBuffer(gridResolution * gridResolution * _maxSegmentsPerCell, sizeof(uint), ComputeBufferType.Default);
         }
         
         public void GenerateUdf(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer, RenderTexture outputUdfTexture)
         {
-
             if (_udfShader == null || segmentsBuffer == null || segmentCountBuffer == null || outputUdfTexture == null)
             {
                 Debug.LogError("Cannot generate UDF, missing resources.");
@@ -85,6 +99,27 @@ namespace PlanetGen
             
             int udfThreads = Mathf.CeilToInt(textureRes / 8.0f);
             _udfShader.Dispatch(_generateUdfKernel, udfThreads, udfThreads, 1);
+        }
+        
+        // --- ADD THIS ENTIRE METHOD FOR TESTING ---
+        /// <summary>
+        /// Generates the UDF using a slow but accurate brute-force method. For testing only.
+        /// </summary>
+        public void GenerateUdf_BruteForce(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer, RenderTexture outputUdfTexture)
+        {
+            if (_udfShader == null || _generateUdfBruteForceKernel < 0) return;
+
+            int textureRes = outputUdfTexture.width;
+            
+            // Set shader properties for the brute-force kernel
+            _udfShader.SetInt("_TextureResolution", textureRes);
+            _udfShader.SetBuffer(_generateUdfBruteForceKernel, "_SegmentsBuffer", segmentsBuffer);
+            _udfShader.SetBuffer(_generateUdfBruteForceKernel, "_SegmentCountBuffer", segmentCountBuffer);
+            _udfShader.SetTexture(_generateUdfBruteForceKernel, "_UDFTexture", outputUdfTexture);
+
+            // Dispatch the shader
+            int threadGroups = Mathf.CeilToInt(textureRes / 8.0f);
+            _udfShader.Dispatch(_generateUdfBruteForceKernel, threadGroups, threadGroups, 1);
         }
 
         public void Dispose()

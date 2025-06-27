@@ -28,8 +28,8 @@ namespace PlanetGen
         private int fieldResolution;
         private int textureResolution;
 
-        int gridResolution = 64;
-        int maxSegmentsPerCell = 32;
+        // int gridResolution = 32;
+        // int maxSegmentsPerCell = 64;
         
         
 
@@ -55,11 +55,12 @@ namespace PlanetGen
 
             jumpFlooder = new JumpFlooder();
             
-            udfGen = new UdfFromSegments(gridResolution, maxSegmentsPerCell);
+            // udfGen = new UdfFromSegments(gridResolution, maxSegmentsPerCell);
+            udfGen = new UdfFromSegments();
 
         }
 
-        public void Init(int newFieldWidth, int newTextureRes)
+        public void Init(int newFieldWidth, int newTextureRes, int newGridResolution, int maxSegmentsPerCell)
         {
             fieldResolution = newFieldWidth;
             textureResolution = newTextureRes;
@@ -68,7 +69,7 @@ namespace PlanetGen
             InitPingPongPipelines();
 
             jumpFlooder.InitJFATextures(newTextureRes);
-            udfGen.Init();
+            udfGen.Init(newGridResolution, maxSegmentsPerCell );
         }
 
         void InitBuffers(int fieldWidth, int textureRes)
@@ -110,7 +111,9 @@ namespace PlanetGen
             SurfaceUdfTexture = new RenderTexture(textureRes, textureRes, 0, RenderTextureFormat.RFloat)
             {
                 enableRandomWrite = true,
-                filterMode = FilterMode.Bilinear
+                filterMode = FilterMode.Bilinear,
+                // useMipMap = true,          // Add this
+                // autoGenerateMips = true    // Add this
             };
             SurfaceUdfTexture.Create();
         }
@@ -162,7 +165,7 @@ namespace PlanetGen
             sdfDomainWarpPingPong.Init(textureResolution);
         }
 
-        public void Dispatch(FieldGen.FieldData textures)
+        public void Dispatch(FieldGen.FieldData textures, int gridResolution)
         {
             if (SegmentsBuffer == null) return;
 
@@ -178,7 +181,7 @@ namespace PlanetGen
 
             GenerateWarpedSDF();
             
-            GenerateSurfaceUDF();
+            GenerateSurfaceUDF(gridResolution);
 
         }
 
@@ -238,11 +241,15 @@ namespace PlanetGen
             WarpedSdfTexture = warpedSdfResults.Textures["field"];
         }
 
-        void GenerateSurfaceUDF()
+        void GenerateSurfaceUDF(int gridResolution)
         {
             // Graphics.Blit(JumpFloodSdfTexture, SurfaceUdfTexture);
-            
-            udfGen.GenerateUdf(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
+            if (parent.bruteForce)
+                udfGen.GenerateUdf_BruteForce(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
+            else
+                udfGen.GenerateUdf(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
+                
+            // udfGen.GenerateUdf(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
         }
         
         public void Dispose()
