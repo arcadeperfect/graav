@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace PlanetGen
+namespace PlanetGen.Compute
 {
     public class LocalUDFGenerator : IDisposable
     {

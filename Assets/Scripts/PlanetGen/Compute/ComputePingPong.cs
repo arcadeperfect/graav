@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
 
-namespace PlanetGen
+namespace PlanetGen.Compute
 {
     // Resource specification - what resources you need and their properties
     public class ComputeResourceSpec

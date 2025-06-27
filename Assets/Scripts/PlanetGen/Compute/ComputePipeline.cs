@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace PlanetGen
+namespace PlanetGen.Compute
 {
     public class ComputePipeline : IDisposable
     {
@@ -165,7 +165,7 @@ namespace PlanetGen
             sdfDomainWarpPingPong.Init(textureResolution);
         }
 
-        public void Dispatch(FieldGen.FieldData textures, int gridResolution)
+        public void Dispatch(FieldGen.FieldGen.FieldData textures, int gridResolution)
         {
             if (SegmentsBuffer == null) return;
 
@@ -190,7 +190,7 @@ namespace PlanetGen
         /// </summary>
         /// <param name="preprocessedResults"></param>
         /// <param name="textures"></param>
-        void GenerateSegments(ComputeResources preprocessedResults, FieldGen.FieldData textures)
+        void GenerateSegments(ComputeResources preprocessedResults, FieldGen.FieldGen.FieldData textures)
         {
             var msShader = MarchingSquaresShader;
 

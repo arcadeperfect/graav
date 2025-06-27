@@ -1,3 +1,4 @@
+using PlanetGen.Compute;
 using UnityEngine;
 
 
@@ -64,14 +65,14 @@ namespace PlanetGen
         public bool computeConstantly;
 
         // Core systems
-        private FieldGen fieldGen;
+        private FieldGen.FieldGen fieldGen;
         private ComputePipeline computePipeline;
         private ParameterWatcher paramWatcher;
 
         public Renderer fieldRenderer;
         public Renderer sdfRenderer;
         public Renderer resultRenderer;
-        private FieldGen.FieldData field_textures;
+        private FieldGen.FieldGen.FieldData field_textures;
 
         public void Start()
         {
@@ -109,8 +110,8 @@ namespace PlanetGen
 
         void Init()
         {
-            field_textures = new FieldGen.FieldData(scalarFieldWidth);
-            fieldGen = new FieldGen();
+            field_textures = new FieldGen.FieldGen.FieldData(scalarFieldWidth);
+            fieldGen = new FieldGen.FieldGen();
             computePipeline = new ComputePipeline(this);
             computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
         }

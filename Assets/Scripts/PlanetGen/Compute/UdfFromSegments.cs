@@ -1,7 +1,6 @@
 using UnityEngine;
-using UnityEngine.Rendering;
 
-namespace PlanetGen
+namespace PlanetGen.Compute
 {
     public class UdfFromSegments
     {
