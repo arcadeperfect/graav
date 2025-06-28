@@ -23,7 +23,7 @@ namespace PlanetGen.FieldGen
 
             if (startIndex == -1)
             {
-                Debug.Log("No land found - skipping island culling");
+                // Debug.Log("No land found - skipping island culling");
                 visited.Dispose();
                 return;
             }
@@ -32,7 +32,7 @@ namespace PlanetGen.FieldGen
             int startX = startIndex % texWidth;
             int startY = startIndex / texWidth;
             
-            Debug.Log($"Starting flood fill from ({startX}, {startY})");
+            // Debug.Log($"Starting flood fill from ({startX}, {startY})");
 
             // Initialize flood fill
             queue.Enqueue(new int2(startX, startY));
@@ -53,7 +53,7 @@ namespace PlanetGen.FieldGen
                 CheckAndAddNeighbor(current.x, current.y - 1, texWidth, fieldData, visited, queue);
             }
 
-            Debug.Log($"Main landmass contains {connectedPixels} pixels");
+            // Debug.Log($"Main landmass contains {connectedPixels} pixels");
 
             // Remove all unvisited land pixels (these are the floating islands)
             int removedPixels = 0;
@@ -66,7 +66,7 @@ namespace PlanetGen.FieldGen
                 }
             }
 
-            Debug.Log($"Removed {removedPixels} island pixels");
+            // Debug.Log($"Removed {removedPixels} island pixels");
             visited.Dispose();
         }
 

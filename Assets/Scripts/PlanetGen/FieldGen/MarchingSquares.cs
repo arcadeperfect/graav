@@ -1,155 +1,259 @@
-using System.Collections.Generic;
+using System;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace PlanetGen.Compute
 {
     /// <summary>
-    /// Provides a CPU implementation of the Marching Squares algorithm that is designed to
-    /// produce identical results to the corresponding GPU compute shader version.
-    /// It processes a scalar field to generate line segments representing the iso-surface.
+    /// Provides a highly optimized, parallelized, and Burst-compiled CPU implementation
+    /// of the Marching Squares algorithm. This version is designed for high performance
+    /// and is suitable for being called every frame.
     /// </summary>
     public static class MarchingSquaresCPU
     {
-        // A struct to hold the start and end colors of a line segment, mirroring the GPU version.
-        public struct SegmentColor
+        // A struct to hold the results of polyline extraction.
+        public struct PolylineData : IDisposable
         {
-            public Color color1;
-            public Color color2;
+            // A single list containing all points from all polylines, concatenated.
+            public NativeList<float2> AllPoints;
+            // A list where each int2 represents a polyline.
+            // .x is the start index in AllPoints, .y is the number of points.
+            public NativeList<int2> PolylineRanges;
+
+            public PolylineData(Allocator allocator)
+            {
+                AllPoints = new NativeList<float2>(allocator);
+                PolylineRanges = new NativeList<int2>(allocator);
+            }
+
+            public void Dispose()
+            {
+                if (AllPoints.IsCreated) AllPoints.Dispose();
+                if (PolylineRanges.IsCreated) PolylineRanges.Dispose();
+            }
         }
 
         /// <summary>
-        /// Generates line segments from scalar field data using the Marching Squares algorithm.
+        /// Generates line segments from scalar field data using a Burst-compiled parallel job.
         /// </summary>
-        /// <param name="fieldData">The input field data containing scalar values and colors.</param>
-        /// <param name="isoValue">The threshold value to generate the iso-surface contour.</param>
-        /// <returns>A tuple containing a list of segment positions (Vector4) and a list of segment colors (two per segment).</returns>
-        public static (List<Vector4> segments, List<SegmentColor> segmentColors) GenerateSegments(FieldGen.FieldGen.FieldData fieldData, float isoValue)
+        public static NativeList<float4> GenerateSegmentsBurst(FieldGen.FieldGen.FieldData fieldData, float isoValue, Allocator allocator)
         {
-            var segments = new List<Vector4>();
-            var segmentColors = new List<SegmentColor>();
             int width = fieldData.Width;
-            int height = fieldData.Width; // Assuming square texture
+            int cellCount = (width - 1) * (width - 1);
+            // More conservative capacity estimation to avoid frequent resizing
+            var segments = new NativeList<float4>(cellCount / 2, allocator);
 
-            for (int x = 0; x < width - 1; x++)
+            var job = new MarchingSquaresJob
             {
-                for (int y = 0; y < height - 1; y++)
+                ScalarField = fieldData.ScalarFieldArray,
+                Width = width,
+                IsoValue = isoValue,
+                Segments = segments.AsParallelWriter()
+            };
+
+            JobHandle handle = job.Schedule(cellCount, 64);
+            handle.Complete();
+
+            return segments;
+        }
+
+        /// <summary>
+        /// Extracts connected polylines from an unordered list of segments.
+        /// Improved version with better connectivity detection.
+        /// </summary>
+        public static PolylineData ExtractPolylinesBurst(NativeList<float4> segments, Allocator allocator)
+        {
+            var polylineData = new PolylineData(allocator);
+            if (segments.Length == 0) return polylineData;
+            
+            var job = new ImprovedPolylineExtractionJob
+            {
+                Segments = segments,
+                Epsilon = 0.0001f, // Small epsilon for floating point comparison
+                AllPoints = polylineData.AllPoints,
+                PolylineRanges = polylineData.PolylineRanges
+            };
+            
+            JobHandle handle = job.Schedule();
+            handle.Complete();
+            
+            return polylineData;
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        private struct MarchingSquaresJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<float> ScalarField;
+            [ReadOnly] public int Width;
+            [ReadOnly] public float IsoValue;
+            public NativeList<float4>.ParallelWriter Segments;
+
+            private float2 InterpolateEdge(float2 p1, float2 p2, float v1, float v2)
+            {
+                float t = (IsoValue - v1) / (v2 - v1);
+                return math.lerp(p1, p2, t);
+            }
+
+            private float2 TextureToNormalized(float2 texCoord)
+            {
+                return (texCoord / new float2(Width, Width)) * 2.0f - 1.0f;
+            }
+            
+            public void Execute(int index)
+            {
+                int x = index % (Width - 1);
+                int y = index / (Width - 1);
+
+                float v00 = ScalarField[y * Width + x];
+                float v10 = ScalarField[y * Width + (x + 1)];
+                float v11 = ScalarField[(y + 1) * Width + (x + 1)];
+                float v01 = ScalarField[(y + 1) * Width + x];
+
+                int caseIndex = 0;
+                if (v00 > IsoValue) caseIndex |= 1;
+                if (v10 > IsoValue) caseIndex |= 2;
+                if (v11 > IsoValue) caseIndex |= 4;
+                if (v01 > IsoValue) caseIndex |= 8;
+
+                if (caseIndex == 0 || caseIndex == 15) return;
+
+                float2 edge0_p = InterpolateEdge(new float2(x, y), new float2(x + 1, y), v00, v10);
+                float2 edge1_p = InterpolateEdge(new float2(x + 1, y), new float2(x + 1, y + 1), v10, v11);
+                float2 edge2_p = InterpolateEdge(new float2(x, y + 1), new float2(x + 1, y + 1), v01, v11);
+                float2 edge3_p = InterpolateEdge(new float2(x, y), new float2(x, y + 1), v00, v01);
+                
+                float2 edge0 = TextureToNormalized(edge0_p);
+                float2 edge1 = TextureToNormalized(edge1_p);
+                float2 edge2 = TextureToNormalized(edge2_p);
+                float2 edge3 = TextureToNormalized(edge3_p);
+                
+                switch (caseIndex)
                 {
-                    // Sample the scalar values at the four corners of the cell.
-                    float v00 = fieldData.GetScalarValue(x, y);         // bottom-left
-                    float v10 = fieldData.GetScalarValue(x + 1, y);     // bottom-right
-                    float v11 = fieldData.GetScalarValue(x + 1, y + 1); // top-right
-                    float v01 = fieldData.GetScalarValue(x, y + 1);     // top-left
-
-                    // Sample the colors at the four corners of the cell.
-                    float4 c00_f4 = fieldData.GetColorValue(x, y);
-                    float4 c10_f4 = fieldData.GetColorValue(x + 1, y);
-                    float4 c11_f4 = fieldData.GetColorValue(x + 1, y + 1);
-                    float4 c01_f4 = fieldData.GetColorValue(x, y + 1);
-
-                    Color c00 = new Color(c00_f4.x, c00_f4.y, c00_f4.z, c00_f4.w);
-                    Color c10 = new Color(c10_f4.x, c10_f4.y, c10_f4.z, c10_f4.w);
-                    Color c11 = new Color(c11_f4.x, c11_f4.y, c11_f4.z, c11_f4.w);
-                    Color c01 = new Color(c01_f4.x, c01_f4.y, c01_f4.z, c01_f4.w);
-
-                    // Determine the case index based on which corners are inside the iso-surface.
-                    int caseIndex = 0;
-                    if (v00 > isoValue) caseIndex |= 1; // bottom-left
-                    if (v10 > isoValue) caseIndex |= 2; // bottom-right
-                    if (v11 > isoValue) caseIndex |= 4; // top-right
-                    if (v01 > isoValue) caseIndex |= 8; // top-left
-
-                    // If all corners are inside or all are outside, there is no line segment.
-                    if (caseIndex == 0 || caseIndex == 15)
-                    {
-                        continue;
-                    }
-
-                    // Calculate the interpolated vertex positions on each of the four cell edges.
-                    Vector2 edge0 = InterpolateEdgeNormalized(new Vector2Int(x, y), new Vector2Int(x + 1, y), v00, v10, isoValue, width, height); // bottom
-                    Vector2 edge1 = InterpolateEdgeNormalized(new Vector2Int(x + 1, y), new Vector2Int(x + 1, y + 1), v10, v11, isoValue, width, height); // right
-                    Vector2 edge2 = InterpolateEdgeNormalized(new Vector2Int(x, y + 1), new Vector2Int(x + 1, y + 1), v01, v11, isoValue, width, height); // top
-                    Vector2 edge3 = InterpolateEdgeNormalized(new Vector2Int(x, y), new Vector2Int(x, y + 1), v00, v01, isoValue, width, height); // left
-
-                    // Calculate the interpolated colors at each of the new vertices.
-                    Color color0 = InterpolateColor(c00, c10, v00, v10, isoValue); // bottom
-                    Color color1 = InterpolateColor(c10, c11, v10, v11, isoValue); // right
-                    Color color2 = InterpolateColor(c01, c11, v01, v11, isoValue); // top
-                    Color color3 = InterpolateColor(c00, c01, v00, v01, isoValue); // left
-
-                    // Use the case index to determine which line segments to generate.
-                    switch (caseIndex)
-                    {
-                        case 1: case 14:
-                            AddSegment(segments, segmentColors, edge3, edge0, color3, color0);
-                            break;
-                        case 2: case 13:
-                            AddSegment(segments, segmentColors, edge0, edge1, color0, color1);
-                            break;
-                        case 3: case 12:
-                            AddSegment(segments, segmentColors, edge3, edge1, color3, color1);
-                            break;
-                        case 4: case 11:
-                            AddSegment(segments, segmentColors, edge1, edge2, color1, color2);
-                            break;
-                        case 5: // Saddle point
-                            AddSegment(segments, segmentColors, edge3, edge0, color3, color0);
-                            AddSegment(segments, segmentColors, edge1, edge2, color1, color2);
-                            break;
-                        case 6: case 9:
-                            AddSegment(segments, segmentColors, edge0, edge2, color0, color2);
-                            break;
-                        case 7: case 8:
-                            AddSegment(segments, segmentColors, edge2, edge3, color2, color3);
-                            break;
-                        case 10: // Saddle point
-                            AddSegment(segments, segmentColors, edge0, edge1, color0, color1);
-                            AddSegment(segments, segmentColors, edge2, edge3, color2, color3);
-                            break;
-                    }
+                    case 1: case 14: Segments.AddNoResize(new float4(edge3, edge0)); break;
+                    case 2: case 13: Segments.AddNoResize(new float4(edge0, edge1)); break;
+                    case 3: case 12: Segments.AddNoResize(new float4(edge3, edge1)); break;
+                    case 4: case 11: Segments.AddNoResize(new float4(edge1, edge2)); break;
+                    case 6: case 9:  Segments.AddNoResize(new float4(edge0, edge2)); break;
+                    case 7: case 8:  Segments.AddNoResize(new float4(edge2, edge3)); break;
+                    case 5:
+                        Segments.AddNoResize(new float4(edge3, edge0));
+                        Segments.AddNoResize(new float4(edge1, edge2));
+                        break;
+                    case 10:
+                        Segments.AddNoResize(new float4(edge0, edge1));
+                        Segments.AddNoResize(new float4(edge2, edge3));
+                        break;
                 }
             }
-
-            return (segments, segmentColors);
         }
 
-        private static void AddSegment(List<Vector4> segments, List<SegmentColor> colors, Vector2 start, Vector2 end, Color color1, Color color2)
+        [BurstCompile(CompileSynchronously = true)]
+        private struct ImprovedPolylineExtractionJob : IJob
         {
-            segments.Add(new Vector4(start.x, start.y, end.x, end.y));
-            colors.Add(new SegmentColor { color1 = color1, color2 = color2 });
-        }
+            [ReadOnly] public NativeList<float4> Segments;
+            [ReadOnly] public float Epsilon;
 
-        // Replicates the HLSL shader's edge interpolation.
-        private static Vector2 InterpolateEdgeNormalized(Vector2Int p1, Vector2Int p2, float v1, float v2, float iso, int width, int height)
-        {
-            if (Mathf.Abs(v1 - v2) < 0.00001f)
+            public NativeList<float2> AllPoints;
+            public NativeList<int2> PolylineRanges;
+
+            private bool PointsEqual(float2 a, float2 b)
             {
-                return TextureToNormalized(p1, width, height);
+                return math.distancesq(a, b) < Epsilon * Epsilon;
             }
 
-            float t = (iso - v1) / (v2 - v1);
-            Vector2 interpTexCoord = Vector2.Lerp(p1, p2, t);
-
-            return TextureToNormalized(interpTexCoord, width, height);
-        }
-
-        // Replicates the HLSL shader's color interpolation.
-        private static Color InterpolateColor(Color c1, Color c2, float v1, float v2, float iso)
-        {
-            if (Mathf.Abs(v1 - v2) < 0.00001f)
+            public void Execute()
             {
-                return c1;
-            }
-            float t = (iso - v1) / (v2 - v1);
-            return Color.Lerp(c1, c2, t);
-        }
+                if (Segments.Length == 0) return;
 
-        // Converts texture coordinates to normalized [-1, 1] space.
-        private static Vector2 TextureToNormalized(Vector2 texCoord, int width, int height)
-        {
-            float normX = (texCoord.x / width) * 2.0f - 1.0f;
-            float normY = (texCoord.y / height) * 2.0f - 1.0f;
-            return new Vector2(normX, normY);
+                var usedSegments = new NativeArray<bool>(Segments.Length, Allocator.Temp, NativeArrayOptions.ClearMemory);
+                var currentPolyline = new NativeList<float2>(Allocator.Temp);
+
+                // Build polylines by connecting segments
+                for (int startIdx = 0; startIdx < Segments.Length; startIdx++)
+                {
+                    if (usedSegments[startIdx]) continue;
+
+                    currentPolyline.Clear();
+                    usedSegments[startIdx] = true;
+
+                    var startSegment = Segments[startIdx];
+                    currentPolyline.Add(startSegment.xy);
+                    currentPolyline.Add(startSegment.zw);
+
+                    // Try to extend the polyline in both directions
+                    bool foundConnection = true;
+                    while (foundConnection)
+                    {
+                        foundConnection = false;
+
+                        // Try to extend forward (from the end)
+                        float2 endPoint = currentPolyline[currentPolyline.Length - 1];
+                        for (int i = 0; i < Segments.Length; i++)
+                        {
+                            if (usedSegments[i]) continue;
+
+                            var segment = Segments[i];
+                            if (PointsEqual(endPoint, segment.xy))
+                            {
+                                // Connect start of segment to end of polyline
+                                currentPolyline.Add(segment.zw);
+                                usedSegments[i] = true;
+                                foundConnection = true;
+                                break;
+                            }
+                            else if (PointsEqual(endPoint, segment.zw))
+                            {
+                                // Connect end of segment to end of polyline (reverse segment)
+                                currentPolyline.Add(segment.xy);
+                                usedSegments[i] = true;
+                                foundConnection = true;
+                                break;
+                            }
+                        }
+
+                        if (foundConnection) continue;
+
+                        // Try to extend backward (from the start)
+                        float2 startPoint = currentPolyline[0];
+                        for (int i = 0; i < Segments.Length; i++)
+                        {
+                            if (usedSegments[i]) continue;
+
+                            var segment = Segments[i];
+                            if (PointsEqual(startPoint, segment.zw))
+                            {
+                                // Connect end of segment to start of polyline
+                                currentPolyline.InsertRange(0, 1);
+                                currentPolyline[0] = segment.xy;
+                                usedSegments[i] = true;
+                                foundConnection = true;
+                                break;
+                            }
+                            else if (PointsEqual(startPoint, segment.xy))
+                            {
+                                // Connect start of segment to start of polyline (reverse segment)
+                                currentPolyline.InsertRange(0, 1);
+                                currentPolyline[0] = segment.zw;
+                                usedSegments[i] = true;
+                                foundConnection = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Store the completed polyline if it has more than 1 point
+                    if (currentPolyline.Length > 1)
+                    {
+                        PolylineRanges.Add(new int2(AllPoints.Length, currentPolyline.Length));
+                        AllPoints.AddRange(currentPolyline.AsArray());
+                    }
+                }
+
+                usedSegments.Dispose();
+                currentPolyline.Dispose();
+            }
         }
     }
 }

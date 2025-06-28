@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using PlanetGen.Compute;
+using Unity.Collections;
+using Unity.Mathematics;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -32,6 +34,12 @@ namespace PlanetGen
 
         [Header("CPU Marching Squares")] [TriggerFieldRegen]
         public bool enableCPUMarchingSquares = true;
+
+        [TriggerFieldRegen] public bool enablePolylineGeneration = false;
+
+        [TriggerFieldRegen] public bool createColliders = false;
+        [TriggerFieldRegen] public PhysicsMaterial2D colliderMaterial;
+        [TriggerFieldRegen] public float colliderThickness = 0.1f;
 
         [TriggerFieldRegen] [Range(0.1f, 0.9f)]
         public float marchingSquaresThreshold = 0.5f;
@@ -80,21 +88,14 @@ namespace PlanetGen
 
         [Header("Debug")] public bool showCPUSegments = true;
         public bool showGPUSegments = true;
-
+        public bool showCPUPolylines;
 
         public Color debugLineColor = Color.red;
         public Color cpuDebugLineColor = Color.blue;
+        public Color polylineDebugColor = Color.green;
         public float debugLineDuration = 0.1f;
         public int maxDebugSegments = 20000;
         public bool computeConstantly;
-
-
-        [Header("CPU Marching Squares Enhanced")] [TriggerFieldRegen]
-        public bool enablePolylineGeneration = false;
-
-        [TriggerFieldRegen] public bool createColliders = false;
-        [TriggerFieldRegen] public PhysicsMaterial2D colliderMaterial;
-        [TriggerFieldRegen] public float colliderThickness = 0.1f;
 
         #endregion
 
@@ -105,7 +106,6 @@ namespace PlanetGen
         private ComputePipeline computePipeline;
         private ParameterWatcher paramWatcher;
 
-        private List<Vector4> cpuSegments;
 
         public Renderer fieldRenderer;
         public Renderer sdfRenderer;
@@ -113,6 +113,9 @@ namespace PlanetGen
         public GameObject collidersObject;
 
         private FieldGen.FieldGen.FieldData field_textures;
+
+        private NativeList<float4> cpuSegments;
+        private MarchingSquaresCPU.PolylineData cpuPolylines;
 
 
         // Performance tracking
@@ -175,7 +178,9 @@ namespace PlanetGen
             fieldGen = new FieldGen.FieldGen();
             computePipeline = new ComputePipeline(this);
             computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
-            cpuSegments = new List<Vector4>();
+
+            cpuSegments = new NativeList<float4>(Allocator.Persistent);
+            cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
         }
 
         void RegenField()
@@ -199,17 +204,39 @@ namespace PlanetGen
             if (enableCPUMarchingSquares && field_textures.IsDataValid)
             {
                 var stopwatch = new Stopwatch();
-                if(showPerformanceStats) stopwatch.Start();
+                // --- Step 1: Generate Segments ---
+                if (showPerformanceStats) stopwatch.Start();
 
-                // Execute the CPU Marching Squares algorithm
-                (var segments, _) = Compute.MarchingSquaresCPU.GenerateSegments(field_textures, marchingSquaresThreshold);
-                cpuSegments = segments;
-                
-                if(showPerformanceStats)
+                if (cpuSegments.IsCreated) cpuSegments.Dispose();
+                cpuSegments = MarchingSquaresCPU.GenerateSegmentsBurst(field_textures, marchingSquaresThreshold,
+                    Allocator.Persistent);
+
+                if (showPerformanceStats)
                 {
                     stopwatch.Stop();
                     lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
-                    lastCPUSegmentCount = cpuSegments.Count;
+                    lastCPUSegmentCount = cpuSegments.Length;
+                    stopwatch.Reset();
+                }
+
+                // --- Step 2: Extract Polylines ---
+                if (enablePolylineGeneration)
+                {
+                    if (showPerformanceStats) stopwatch.Start();
+
+                    if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
+                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesBurst(cpuSegments, Allocator.Persistent);
+
+
+
+                    if (showPerformanceStats)
+                    {
+                        stopwatch.Stop();
+                        lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
+                        lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+
+                        print($"{lastPolylineCount} polylines took {lastPolylineGenerationTime} ms");
+                    }
                 }
             }
 
@@ -244,28 +271,71 @@ namespace PlanetGen
 
         public void DebugDraw()
         {
+            if (showCPUSegments && cpuSegments.IsCreated)
+            {
+                DrawCPUSegments();
+            }
+
+            // --- NEW ---: Draw polylines if enabled
+            if (showCPUPolylines && cpuPolylines.AllPoints.IsCreated)
+            {
+                DrawCPUPolylines();
+            }
+
             if (showGPUSegments && computePipeline?.SegmentsBuffer != null &&
                 computePipeline?.SegmentCountBuffer != null)
             {
                 DrawGPUMarchingSquares();
             }
-            if (showCPUSegments && cpuSegments != null)
-            {
-                DrawCPUMarchingSquares();
-            }
         }
-        private void DrawCPUMarchingSquares()
-        {
-            int actualSegmentCount = Mathf.Min(cpuSegments.Count, maxDebugSegments);
 
+        private void DrawCPUPolylines()
+        {
+            for (int i = 0; i < cpuPolylines.PolylineRanges.Length; i++)
+            {
+                var range = cpuPolylines.PolylineRanges[i];
+                int startIdx = range.x;
+                int pointCount = range.y;
+
+                for (int j = 0; j < pointCount - 1; j++)
+                {
+                    float2 p1_f2 = cpuPolylines.AllPoints[startIdx + j];
+                    float2 p2_f2 = cpuPolylines.AllPoints[startIdx + j + 1];
+
+                    Vector3 p1 = transform.TransformPoint(new Vector3(p1_f2.x, p1_f2.y, 0));
+                    Vector3 p2 = transform.TransformPoint(new Vector3(p2_f2.x, p2_f2.y, 0));
+
+                    Debug.DrawLine(p1, p2, polylineDebugColor, debugLineDuration);
+                }
+            }
+
+            // for (int polylineIndex = 0; polylineIndex < cpuPolylines.PolylineRanges.Length; polylineIndex++)
+            // {
+            //     var range = cpuPolylines.PolylineRanges[polylineIndex];
+            //     int startIndex = range.x;
+            //     int pointCount = range.y;
+            //
+            //     Debug.Log($"Polyline {polylineIndex}: {pointCount} points");
+            //
+            //     // // Print all points in this polyline
+            //     // for (int pointIndex = 0; pointIndex < pointCount; pointIndex++)
+            //     // {
+            //     //     int globalIndex = startIndex + pointIndex;
+            //     //     var point = cpuPolylines.AllPoints[globalIndex];
+            //     //     Debug.Log($"  Point {pointIndex}: ({point.x:F3}, {point.y:F3})");
+            //     // }
+            // }
+            
+        }
+
+        private void DrawCPUSegments()
+        {
+            int actualSegmentCount = Mathf.Min(cpuSegments.Length, maxDebugSegments);
             for (int i = 0; i < actualSegmentCount; i++)
             {
-                Vector4 segment = cpuSegments[i];
-                Vector3 start = new Vector3(segment.x, segment.y, 0f);
-                Vector3 end = new Vector3(segment.z, segment.w, 0f);
-
-                start = transform.TransformPoint(start);
-                end = transform.TransformPoint(end);
+                float4 segment = cpuSegments[i];
+                Vector3 start = transform.TransformPoint(new Vector3(segment.x, segment.y, 0f));
+                Vector3 end = transform.TransformPoint(new Vector3(segment.z, segment.w, 0f));
                 Debug.DrawLine(start, end, cpuDebugLineColor, debugLineDuration);
             }
         }
@@ -292,6 +362,8 @@ namespace PlanetGen
                 Debug.DrawLine(start, end, debugLineColor, debugLineDuration);
             }
         }
+
+
 
         #endregion
     }
