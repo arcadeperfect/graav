@@ -1,281 +1,215 @@
 using System.Collections.Generic;
-using Unity.Burst;
 using Unity.Collections;
-using Unity.Jobs;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace PlanetGen.FieldGen
 {
     public static class IslandCuller
     {
         /// <summary>
-        /// Serial flood fill - simple but slower for large textures
+        /// Simple flood fill that keeps only the main landmass connected to the center
         /// </summary>
-        public static void FloodFillSerial(NativeArray<float> fieldData, int texWidth)
+        public static void FloodFillSimple(NativeArray<float> fieldData, int texWidth)
         {
+            // Create visited array
             var visited = new NativeArray<bool>(texWidth * texWidth, Allocator.Temp);
             var queue = new Queue<int2>();
 
-            // Find the center pixel or nearest land pixel to it
+            // Find starting point - either center if it's land, or closest land to center
             int centerX = texWidth / 2;
             int centerY = texWidth / 2;
-            int startIndex = -1;
-
-            // Start from center if it's land
-            int centerIndex = centerY * texWidth + centerX;
-            if (fieldData[centerIndex] > 0.5f)
-            {
-                startIndex = centerIndex;
-            }
-            else
-            {
-                // Find nearest land pixel to center
-                float nearestDist = float.MaxValue;
-                for (int y = 0; y < texWidth; y++)
-                {
-                    for (int x = 0; x < texWidth; x++)
-                    {
-                        int index = y * texWidth + x;
-                        if (fieldData[index] > 0.5f)
-                        {
-                            float dist = math.distance(new float2(x, y), new float2(centerX, centerY));
-                            if (dist < nearestDist)
-                            {
-                                nearestDist = dist;
-                                startIndex = index;
-                            }
-                        }
-                    }
-                }
-            }
+            int startIndex = GetStartingPoint(fieldData, texWidth, centerX, centerY);
 
             if (startIndex == -1)
             {
+                Debug.Log("No land found - skipping island culling");
                 visited.Dispose();
-                return; // No land found
+                return;
             }
 
-            // Start flood fill
-            queue.Enqueue(new int2(startIndex % texWidth, startIndex / texWidth));
+            // Convert start index to coordinates
+            int startX = startIndex % texWidth;
+            int startY = startIndex / texWidth;
+            
+            Debug.Log($"Starting flood fill from ({startX}, {startY})");
+
+            // Initialize flood fill
+            queue.Enqueue(new int2(startX, startY));
             visited[startIndex] = true;
 
-            // 4-directional flood fill without managed arrays
+            int connectedPixels = 0;
+
+            // Flood fill using 4-connectivity
             while (queue.Count > 0)
             {
                 var current = queue.Dequeue();
-                int x = current.x;
-                int y = current.y;
-                
-                // Check 4 neighbors individually
-                // Right
-                if (x + 1 < texWidth)
-                {
-                    int rightIndex = y * texWidth + (x + 1);
-                    if (!visited[rightIndex] && fieldData[rightIndex] > 0.5f)
-                    {
-                        visited[rightIndex] = true;
-                        queue.Enqueue(new int2(x + 1, y));
-                    }
-                }
-                
-                // Down
-                if (y + 1 < texWidth)
-                {
-                    int downIndex = (y + 1) * texWidth + x;
-                    if (!visited[downIndex] && fieldData[downIndex] > 0.5f)
-                    {
-                        visited[downIndex] = true;
-                        queue.Enqueue(new int2(x, y + 1));
-                    }
-                }
-                
-                // Left
-                if (x - 1 >= 0)
-                {
-                    int leftIndex = y * texWidth + (x - 1);
-                    if (!visited[leftIndex] && fieldData[leftIndex] > 0.5f)
-                    {
-                        visited[leftIndex] = true;
-                        queue.Enqueue(new int2(x - 1, y));
-                    }
-                }
-                
-                // Up
-                if (y - 1 >= 0)
-                {
-                    int upIndex = (y - 1) * texWidth + x;
-                    if (!visited[upIndex] && fieldData[upIndex] > 0.5f)
-                    {
-                        visited[upIndex] = true;
-                        queue.Enqueue(new int2(x, y - 1));
-                    }
-                }
+                connectedPixels++;
+
+                // Check 4 neighbors
+                CheckAndAddNeighbor(current.x + 1, current.y, texWidth, fieldData, visited, queue);
+                CheckAndAddNeighbor(current.x - 1, current.y, texWidth, fieldData, visited, queue);
+                CheckAndAddNeighbor(current.x, current.y + 1, texWidth, fieldData, visited, queue);
+                CheckAndAddNeighbor(current.x, current.y - 1, texWidth, fieldData, visited, queue);
             }
 
-            // Clear all unvisited land pixels (floating islands)
+            Debug.Log($"Main landmass contains {connectedPixels} pixels");
+
+            // Remove all unvisited land pixels (these are the floating islands)
+            int removedPixels = 0;
             for (int i = 0; i < fieldData.Length; i++)
             {
                 if (fieldData[i] > 0.5f && !visited[i])
                 {
                     fieldData[i] = 0f;
+                    removedPixels++;
                 }
             }
 
+            Debug.Log($"Removed {removedPixels} island pixels");
             visited.Dispose();
         }
 
-        /// <summary>
-        /// Parallelized erosion-based island removal
-        /// Safer than Union-Find and still much faster than serial for large textures
-        /// </summary>
-        public static void FloodFillParallel(NativeArray<float> fieldData, int texWidth)
+        private static int GetStartingPoint(NativeArray<float> fieldData, int texWidth, int centerX, int centerY)
         {
-            // First pass: mark all pixels by distance from center
-            var distanceField = new NativeArray<float>(texWidth * texWidth, Allocator.TempJob);
-            var markJob = new DistanceMarkJob
-            {
-                FieldData = fieldData,
-                DistanceField = distanceField,
-                TexWidth = texWidth,
-                CenterX = texWidth / 2f,
-                CenterY = texWidth / 2f
-            };
-            var markHandle = markJob.Schedule(texWidth * texWidth, 64);
-            markHandle.Complete();
-
-            // Find the main landmass center (closest land pixel to center)
-            float2 mainCenter = FindMainLandmassCenter(fieldData, distanceField, texWidth);
-
-            // Multiple erosion passes to remove disconnected islands
-            var tempBuffer = new NativeArray<float>(texWidth * texWidth, Allocator.TempJob);
+            int centerIndex = centerY * texWidth + centerX;
             
-            for (int pass = 0; pass < 3; pass++) // 3 erosion passes should be enough
+            // If center is land, start there
+            if (fieldData[centerIndex] > 0.5f)
             {
-                var erosionJob = new IslandErosionJob
-                {
-                    InputData = fieldData,
-                    OutputData = tempBuffer,
-                    TexWidth = texWidth,
-                    MainCenterX = mainCenter.x,
-                    MainCenterY = mainCenter.y,
-                    MaxDistance = texWidth * 0.6f // Allow landmass to extend up to 60% of texture size
-                };
-                var erosionHandle = erosionJob.Schedule(texWidth * texWidth, 64);
-                erosionHandle.Complete();
-
-                // Copy back
-                fieldData.CopyFrom(tempBuffer);
+                return centerIndex;
             }
 
-            distanceField.Dispose();
-            tempBuffer.Dispose();
-        }
+            // Otherwise find the closest land pixel to center
+            float nearestDistSq = float.MaxValue;
+            int nearestIndex = -1;
 
-        private static float2 FindMainLandmassCenter(NativeArray<float> fieldData, NativeArray<float> distanceField, int texWidth)
-        {
-            float centerX = texWidth / 2f;
-            float centerY = texWidth / 2f;
-            float bestDistance = float.MaxValue;
-            float2 bestCenter = new float2(centerX, centerY);
-
-            // Find the land pixel closest to the texture center
-            for (int i = 0; i < fieldData.Length; i++)
+            for (int y = 0; y < texWidth; y++)
             {
-                if (fieldData[i] > 0.5f && distanceField[i] < bestDistance)
+                for (int x = 0; x < texWidth; x++)
                 {
-                    bestDistance = distanceField[i];
-                    int x = i % texWidth;
-                    int y = i / texWidth;
-                    bestCenter = new float2(x, y);
-                }
-            }
-
-            return bestCenter;
-        }
-
-        [BurstCompile(CompileSynchronously = true)]
-        private struct DistanceMarkJob : IJobParallelFor
-        {
-            [ReadOnly] public NativeArray<float> FieldData;
-            [WriteOnly] public NativeArray<float> DistanceField;
-            [ReadOnly] public int TexWidth;
-            [ReadOnly] public float CenterX;
-            [ReadOnly] public float CenterY;
-
-            public void Execute(int index)
-            {
-                if (FieldData[index] > 0.5f)
-                {
-                    int x = index % TexWidth;
-                    int y = index / TexWidth;
-                    float distance = math.distance(new float2(x, y), new float2(CenterX, CenterY));
-                    DistanceField[index] = distance;
-                }
-                else
-                {
-                    DistanceField[index] = float.MaxValue;
-                }
-            }
-        }
-
-        [BurstCompile(CompileSynchronously = true)]
-        private struct IslandErosionJob : IJobParallelFor
-        {
-            [ReadOnly] public NativeArray<float> InputData;
-            [WriteOnly] public NativeArray<float> OutputData;
-            [ReadOnly] public int TexWidth;
-            [ReadOnly] public float MainCenterX;
-            [ReadOnly] public float MainCenterY;
-            [ReadOnly] public float MaxDistance;
-
-            public void Execute(int index)
-            {
-                if (InputData[index] < 0.5f)
-                {
-                    OutputData[index] = 0f;
-                    return;
-                }
-
-                int x = index % TexWidth;
-                int y = index / TexWidth;
-
-                // Distance from main landmass center
-                float distFromMain = math.distance(new float2(x, y), new float2(MainCenterX, MainCenterY));
-                
-                // If too far from main center, remove it
-                if (distFromMain > MaxDistance)
-                {
-                    OutputData[index] = 0f;
-                    return;
-                }
-
-                // Count connected land neighbors
-                int landNeighbors = 0;
-                for (int dy = -1; dy <= 1; dy++)
-                {
-                    for (int dx = -1; dx <= 1; dx++)
+                    int index = y * texWidth + x;
+                    if (fieldData[index] > 0.5f)
                     {
-                        if (dx == 0 && dy == 0) continue;
+                        float dx = x - centerX;
+                        float dy = y - centerY;
+                        float distSq = dx * dx + dy * dy;
                         
-                        int nx = x + dx;
-                        int ny = y + dy;
-                        
-                        if (nx >= 0 && nx < TexWidth && ny >= 0 && ny < TexWidth)
+                        if (distSq < nearestDistSq)
                         {
-                            int neighborIndex = ny * TexWidth + nx;
-                            if (InputData[neighborIndex] > 0.5f)
-                                landNeighbors++;
+                            nearestDistSq = distSq;
+                            nearestIndex = index;
                         }
                     }
                 }
-
-                // Keep pixel if it has enough neighbors (prevents isolated pixels)
-                // Also bias towards keeping pixels closer to the main center
-                float bias = 1f - (distFromMain / MaxDistance);
-                int requiredNeighbors = (int)(3 - bias * 2); // 1-3 neighbors required depending on distance
-                
-                OutputData[index] = landNeighbors >= requiredNeighbors ? InputData[index] : 0f;
             }
+
+            return nearestIndex;
+        }
+
+        private static void CheckAndAddNeighbor(int x, int y, int texWidth, 
+                                              NativeArray<float> fieldData, 
+                                              NativeArray<bool> visited, 
+                                              Queue<int2> queue)
+        {
+            // Check bounds
+            if (x < 0 || x >= texWidth || y < 0 || y >= texWidth)
+                return;
+
+            int index = y * texWidth + x;
+            
+            // Check if it's land and not visited
+            if (fieldData[index] > 0.5f && !visited[index])
+            {
+                visited[index] = true;
+                queue.Enqueue(new int2(x, y));
+            }
+        }
+
+        /// <summary>
+        /// Alternative parallel version for very large textures (experimental)
+        /// Uses a growing region approach instead of traditional flood fill
+        /// </summary>
+        public static void FloodFillParallel(NativeArray<float> fieldData, int texWidth)
+        {
+            // For small textures, just use the simple version
+            if (texWidth <= 512)
+            {
+                FloodFillSimple(fieldData, texWidth);
+                return;
+            }
+
+            Debug.Log("Using parallel flood fill for large texture");
+            
+            // Create a connectivity map
+            var connected = new NativeArray<bool>(texWidth * texWidth, Allocator.TempJob);
+            
+            // Find starting point
+            int centerX = texWidth / 2;
+            int centerY = texWidth / 2;
+            int startIndex = GetStartingPoint(fieldData, texWidth, centerX, centerY);
+            
+            if (startIndex == -1)
+            {
+                connected.Dispose();
+                return;
+            }
+
+            // Mark starting point as connected
+            connected[startIndex] = true;
+            
+            // Iteratively grow the connected region
+            bool changed = true;
+            int iterations = 0;
+            
+            while (changed && iterations < texWidth) // Safety limit
+            {
+                changed = false;
+                
+                for (int i = 0; i < fieldData.Length; i++)
+                {
+                    if (fieldData[i] > 0.5f && !connected[i])
+                    {
+                        // Check if this pixel is adjacent to any connected pixel
+                        int x = i % texWidth;
+                        int y = i / texWidth;
+                        
+                        if (HasConnectedNeighbor(x, y, texWidth, connected))
+                        {
+                            connected[i] = true;
+                            changed = true;
+                        }
+                    }
+                }
+                iterations++;
+            }
+            
+            Debug.Log($"Parallel flood fill completed in {iterations} iterations");
+
+            // Remove unconnected land
+            int removedPixels = 0;
+            for (int i = 0; i < fieldData.Length; i++)
+            {
+                if (fieldData[i] > 0.5f && !connected[i])
+                {
+                    fieldData[i] = 0f;
+                    removedPixels++;
+                }
+            }
+
+            Debug.Log($"Removed {removedPixels} island pixels");
+            connected.Dispose();
+        }
+
+        private static bool HasConnectedNeighbor(int x, int y, int texWidth, NativeArray<bool> connected)
+        {
+            // Check 4 neighbors
+            if (x > 0 && connected[(y * texWidth) + (x - 1)]) return true;
+            if (x < texWidth - 1 && connected[(y * texWidth) + (x + 1)]) return true;
+            if (y > 0 && connected[((y - 1) * texWidth) + x]) return true;
+            if (y < texWidth - 1 && connected[((y + 1) * texWidth) + x]) return true;
+            
+            return false;
         }
     }
 }

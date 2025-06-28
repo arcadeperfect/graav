@@ -58,9 +58,9 @@ namespace PlanetGen.Compute
         
         public void GenerateUdf(ComputeBuffer segmentsBuffer, ComputeBuffer segmentCountBuffer, RenderTexture outputUdfTexture)
         {
-            if (_udfShader == null || segmentsBuffer == null || segmentCountBuffer == null || outputUdfTexture == null)
+            if (!_udfShader || segmentsBuffer == null || segmentCountBuffer == null || !outputUdfTexture)
             {
-                Debug.LogError("Cannot generate UDF, missing resources.");
+                // Debug.LogError("Cannot generate UDF, missing resources.");
                 return;
             }
 

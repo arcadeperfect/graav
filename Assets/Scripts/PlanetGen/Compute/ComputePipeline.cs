@@ -153,9 +153,9 @@ namespace PlanetGen.Compute
                 .WithResources(spec => spec.AddTexture("field", RenderTextureFormat.ARGBFloat))
                 .AddStep(domainWarpShader,
                     CSP.DomainWarp.Kernels.Warp, conf => conf
-                        .WithIterations(() => parent.domainWarpIterations2)
+                        .WithIterations(() => parent.domainWarp2Iterations)
                         .WithFloatParam("amplitude", () => parent.domainWarp2)
-                        .WithFloatParam("frequency", () => parent.domainWarpScale2))
+                        .WithFloatParam("frequency", () => parent.domainWarp2Scale))
                 .AddStep(gaussianBlurShader,
                     CSP.GaussianBlur.Kernels.GaussianBlur,
                     conf => conf
@@ -171,7 +171,7 @@ namespace PlanetGen.Compute
 
             // STEP 1: Enhanced preprocessing with domain warp AND blur
             var input = new ComputeResources();
-            input.Textures["field"] = textures.ScalarField;
+            input.Textures["field"] = textures.ScalarFieldTexture;
             var preprocessedResults = fieldPreprocessingPipeline.Dispatch(input);
 
 
@@ -181,7 +181,7 @@ namespace PlanetGen.Compute
 
             GenerateWarpedSDF();
             
-            GenerateSurfaceUDF(gridResolution);
+            GenerateSurfaceUdf(gridResolution);
 
         }
 
@@ -241,7 +241,7 @@ namespace PlanetGen.Compute
             WarpedSdfTexture = warpedSdfResults.Textures["field"];
         }
 
-        void GenerateSurfaceUDF(int gridResolution)
+        void GenerateSurfaceUdf(int gridResolution)
         {
             // Graphics.Blit(JumpFloodSdfTexture, SurfaceUdfTexture);
             if (parent.bruteForce)

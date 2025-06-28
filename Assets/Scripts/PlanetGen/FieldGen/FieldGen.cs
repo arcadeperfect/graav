@@ -10,38 +10,51 @@ namespace PlanetGen.FieldGen
 {
     public class FieldGen: IDisposable
     {
-        public struct  FieldData: IDisposable
+        public struct FieldData: IDisposable
         {
-            public RenderTexture ScalarField;
+            public RenderTexture ScalarFieldTexture;
             public RenderTexture Colors;
+            public NativeArray<float> ScalarFieldArray;
+            public NativeArray<float4> ColorArray;
+            public bool IsDataValid;
+            public int Width;
 
             public FieldData(int texture_width)
             {
-                ScalarField = new RenderTexture(texture_width, texture_width, 0, RenderTextureFormat.RFloat) // Use RFloat for single-channel data
+                Width = texture_width;
+                
+                ScalarFieldTexture = new RenderTexture(texture_width, texture_width, 0, RenderTextureFormat.RFloat)
                 {
-                    filterMode = FilterMode.Bilinear, // Use Bilinear for smoother results
+                    filterMode = FilterMode.Bilinear,
                     enableRandomWrite = true
                 };
-                ScalarField.Create();
+                ScalarFieldTexture.Create();
+                
                 Colors = new RenderTexture(texture_width, texture_width, 0, RenderTextureFormat.ARGBFloat)
                 {
                     filterMode = FilterMode.Bilinear,
                     enableRandomWrite = true
                 };
                 Colors.Create();
+
+                // Initialize persistent native arrays
+                int totalPixels = texture_width * texture_width;
+                ScalarFieldArray = new NativeArray<float>(totalPixels, Allocator.Persistent);
+                ColorArray = new NativeArray<float4>(totalPixels, Allocator.Persistent);
+                IsDataValid = false;
             }
             
             public void Dispose()
             {
                 // Safely destroy textures when disposing
-                if (ScalarField != null)
+                if (ScalarFieldTexture != null)
                 {
-                    if(ScalarField.IsCreated())
+                    if(ScalarFieldTexture.IsCreated())
                     {
-                        ScalarField.Release();
+                        ScalarFieldTexture.Release();
                     }
-                    Object.Destroy(ScalarField);
-                    ScalarField = null;
+                    Object.Destroy(ScalarFieldTexture);
+                    ScalarFieldTexture = null;
                 }
                 if (Colors != null)
                 {
@@ -52,6 +65,64 @@ namespace PlanetGen.FieldGen
                     Object.Destroy(Colors);
                     Colors = null;
                 }
+
+                // Dispose native arrays
+                if (ScalarFieldArray.IsCreated)
+                {
+                    ScalarFieldArray.Dispose();
+                }
+                if (ColorArray.IsCreated)
+                {
+                    ColorArray.Dispose();
+                }
+                
+                IsDataValid = false;
+                Width = 0;
+            }
+
+            /// <summary>
+            /// Gets the scalar value at the specified coordinates.
+            /// </summary>
+            public float GetScalarValue(int x, int y)
+            {
+                if (!IsDataValid)
+                    throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+                
+                if (x < 0 || x >= Width || y < 0 || y >= Width)
+                    throw new ArgumentOutOfRangeException("Coordinates out of bounds");
+                
+                int index = y * Width + x;
+                return ScalarFieldArray[index];
+            }
+
+            /// <summary>
+            /// Gets the color value at the specified coordinates.
+            /// </summary>
+            public float4 GetColorValue(int x, int y)
+            {
+                if (!IsDataValid)
+                    throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+                
+                if (x < 0 || x >= Width || y < 0 || y >= Width)
+                    throw new ArgumentOutOfRangeException("Coordinates out of bounds");
+                
+                int index = y * Width + x;
+                return ColorArray[index];
+            }
+
+            /// <summary>
+            /// Sets the scalar value at the specified coordinates.
+            /// </summary>
+            public void SetScalarValue(int x, int y, float value)
+            {
+                if (!IsDataValid)
+                    throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+                
+                if (x < 0 || x >= Width || y < 0 || y >= Width)
+                    throw new ArgumentOutOfRangeException("Coordinates out of bounds");
+                
+                int index = y * Width + x;
+                ScalarFieldArray[index] = value;
             }
         }
 
@@ -69,22 +140,17 @@ namespace PlanetGen.FieldGen
         public void GetTex(ref FieldData inTEX, float seed, float radius, float amplitude, float frequency, int tex_width, int blurIterations = 0, bool cullIslands = true)
         {
             // Reinitialize textures only if the width has changed or they don't exist
-            if (inTEX.ScalarField == null || tex_width != inTEX.ScalarField.width)
+            if (inTEX.ScalarFieldTexture == null || tex_width != inTEX.ScalarFieldTexture.width)
             {
                 inTEX.Dispose(); // Dispose of existing textures if they exist
                 inTEX = new FieldData(tex_width); // Create new textures
             }
 
-            // Allocate native arrays for texture data
-            // Note: We only need a single float (R channel) for the scalar field.
-            NativeArray<float> textureData = new NativeArray<float>(tex_width * tex_width, Allocator.TempJob);
-            NativeArray<float4> colorData = new NativeArray<float4>(tex_width * tex_width, Allocator.TempJob);
-
-            // --- STAGE 1: GENERATE BASE TEXTURES ---
+            // Use the persistent arrays from FieldData
             var generationJob = new TextureGenerationJob
             {
-                fieldData = textureData,
-                colorData = colorData,
+                fieldData = inTEX.ScalarFieldArray,
+                colorData = inTEX.ColorArray,
                 texWidth = tex_width,
                 radius = radius,
                 centerX = tex_width / 2f,
@@ -104,7 +170,7 @@ namespace PlanetGen.FieldGen
                 // We need a second buffer to ping-pong data between for blurring
                 NativeArray<float> blurBuffer = new NativeArray<float>(tex_width * tex_width, Allocator.TempJob);
 
-                NativeArray<float> readBuffer = textureData;
+                NativeArray<float> readBuffer = inTEX.ScalarFieldArray;
                 NativeArray<float> writeBuffer = blurBuffer;
 
                 for (int i = 0; i < blurIterations; i++)
@@ -123,11 +189,11 @@ namespace PlanetGen.FieldGen
                     (readBuffer, writeBuffer) = (writeBuffer, readBuffer);
                 }
 
-                // Ensure the final result is in textureData. If blurIterations is odd,
+                // Ensure the final result is in the persistent array. If blurIterations is odd,
                 // the final data is in blurBuffer, so we copy it back.
-                if (readBuffer != textureData)
+                if (readBuffer != inTEX.ScalarFieldArray)
                 {
-                    textureData.CopyFrom(readBuffer);
+                    inTEX.ScalarFieldArray.CopyFrom(readBuffer);
                 }
                 
                 blurBuffer.Dispose();
@@ -138,15 +204,13 @@ namespace PlanetGen.FieldGen
             {
                 if (tex_width <= 512)
                 {
-                    // Use serial flood fill for smaller textures
-                    // IslandCuller.FloodFillSerial(textureData, tex_width);
-                    IslandCuller.FloodFillParallel(textureData, tex_width);
-
+                    // Use parallel flood fill for smaller textures
+                    IslandCuller.FloodFillParallel(inTEX.ScalarFieldArray, tex_width);
                 }
                 else
                 {
                     // Use parallel approach for larger textures
-                    IslandCuller.FloodFillParallel(textureData, tex_width);
+                    IslandCuller.FloodFillParallel(inTEX.ScalarFieldArray, tex_width);
                 }
             }
 
@@ -154,22 +218,110 @@ namespace PlanetGen.FieldGen
             Texture2D tempTexture = new Texture2D(tex_width, tex_width, TextureFormat.RFloat, false);
             Texture2D tempColorTexture = new Texture2D(tex_width, tex_width, TextureFormat.RGBAFloat, false);
     
-            // Set pixel data on Texture2D
-            tempTexture.SetPixelData(textureData, 0);
+            // Set pixel data on Texture2D using the persistent arrays
+            tempTexture.SetPixelData(inTEX.ScalarFieldArray, 0);
             tempTexture.Apply();
     
-            tempColorTexture.SetPixelData(colorData, 0);
+            tempColorTexture.SetPixelData(inTEX.ColorArray, 0);
             tempColorTexture.Apply();
     
             // Blit to the final RenderTextures
-            Graphics.Blit(tempTexture, inTEX.ScalarField);
+            Graphics.Blit(tempTexture, inTEX.ScalarFieldTexture);
             Graphics.Blit(tempColorTexture, inTEX.Colors);
     
             // Clean up temporary objects
             Object.Destroy(tempTexture);
             Object.Destroy(tempColorTexture);
-            textureData.Dispose();
-            colorData.Dispose();
+            
+            // Mark data as valid
+            inTEX.IsDataValid = true;
+        }
+
+        /// <summary>
+        /// Gets a copy of the scalar field data as a NativeArray.
+        /// The caller is responsible for disposing the returned array.
+        /// </summary>
+        public NativeArray<float> GetScalarDataCopy(FieldData fieldData)
+        {
+            if (!fieldData.IsDataValid)
+            {
+                throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+            }
+            
+            var copy = new NativeArray<float>(fieldData.ScalarFieldArray.Length, Allocator.Persistent);
+            copy.CopyFrom(fieldData.ScalarFieldArray);
+            return copy;
+        }
+
+        /// <summary>
+        /// Gets a copy of the color data as a NativeArray.
+        /// The caller is responsible for disposing the returned array.
+        /// </summary>
+        public NativeArray<float4> GetColorDataCopy(FieldData fieldData)
+        {
+            if (!fieldData.IsDataValid)
+            {
+                throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+            }
+            
+            var copy = new NativeArray<float4>(fieldData.ColorArray.Length, Allocator.Persistent);
+            copy.CopyFrom(fieldData.ColorArray);
+            return copy;
+        }
+
+        /// <summary>
+        /// Gets a direct reference to the scalar field data.
+        /// WARNING: Do not dispose this array - it's managed by FieldData.
+        /// </summary>
+        public NativeArray<float> GetScalarDataReference(FieldData fieldData)
+        {
+            if (!fieldData.IsDataValid)
+            {
+                throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+            }
+            
+            return fieldData.ScalarFieldArray;
+        }
+
+        /// <summary>
+        /// Gets a direct reference to the color data.
+        /// WARNING: Do not dispose this array - it's managed by FieldData.
+        /// </summary>
+        public NativeArray<float4> GetColorDataReference(FieldData fieldData)
+        {
+            if (!fieldData.IsDataValid)
+            {
+                throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+            }
+            
+            return fieldData.ColorArray;
+        }
+
+        /// <summary>
+        /// Updates the GPU textures from the current native array data.
+        /// Call this after modifying the native arrays directly.
+        /// </summary>
+        public void UpdateGPUTextures(ref FieldData fieldData)
+        {
+            if (!fieldData.IsDataValid)
+            {
+                throw new InvalidOperationException("Field data is not valid. Call GetTex first.");
+            }
+
+            Texture2D tempTexture = new Texture2D(fieldData.Width, fieldData.Width, TextureFormat.RFloat, false);
+            Texture2D tempColorTexture = new Texture2D(fieldData.Width, fieldData.Width, TextureFormat.RGBAFloat, false);
+
+            tempTexture.SetPixelData(fieldData.ScalarFieldArray, 0);
+            tempTexture.Apply();
+
+            tempColorTexture.SetPixelData(fieldData.ColorArray, 0);
+            tempColorTexture.Apply();
+
+            Graphics.Blit(tempTexture, fieldData.ScalarFieldTexture);
+            Graphics.Blit(tempColorTexture, fieldData.Colors);
+
+            Object.Destroy(tempTexture);
+            Object.Destroy(tempColorTexture);
         }
         
         void PrintNativeArray<T>(NativeArray<T> textureData, int tex_width) where T : struct
@@ -192,7 +344,7 @@ namespace PlanetGen.FieldGen
         [BurstCompile(CompileSynchronously = true)]
         private struct TextureGenerationJob : IJobParallelFor
         {
-            [WriteOnly] public NativeArray<float> fieldData; // Changed to float
+            [WriteOnly] public NativeArray<float> fieldData;
             [WriteOnly] public NativeArray<float4> colorData;
 
             [ReadOnly] public int texWidth;
@@ -203,7 +355,6 @@ namespace PlanetGen.FieldGen
             [ReadOnly] public float frequency;
             [ReadOnly] public float amplitude;
             [ReadOnly] public float seed;
-
 
             public void Execute(int index)
             {
