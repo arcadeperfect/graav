@@ -1,0 +1,90 @@
+{
+    "name": "PlayerControls",
+    "maps": [
+        {
+            "name": "Dig",
+            "id": "2ab7ca44-44e8-4e86-8d51-b8b60cce374c",
+            "actions": [
+                {
+                    "name": "New action",
+                    "type": "Button",
+                    "id": "72bd7815-8d35-431d-a687-27a1a8c8f9a2",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "7da2a362-2e56-4a8f-b4b6-5eaa4ca9a8c0",
+                    "path": "<Mouse>/leftButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "New action",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        },
+        {
+            "name": "Build",
+            "id": "51095c11-0894-44d7-9612-20592e6184fb",
+            "actions": [
+                {
+                    "name": "New action",
+                    "type": "Button",
+                    "id": "27063228-b149-4e14-8bd7-5c67ae8f8629",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "c8add27f-51f1-4a1e-a937-48c371bd970e",
+                    "path": "<Mouse>/rightButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "New action",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        },
+        {
+            "name": "MoustPosition",
+            "id": "7a212d13-2f55-49c7-8ff0-247645a3b3d7",
+            "actions": [
+                {
+                    "name": "New action",
+                    "type": "Value",
+                    "id": "df130bc0-f8e2-4209-a587-0d2d741cdf84",
+                    "expectedControlType": "Vector2",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "7e1cec2f-ea8a-4655-89a8-325a0a632a82",
+                    "path": "<Mouse>/position",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "New action",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}

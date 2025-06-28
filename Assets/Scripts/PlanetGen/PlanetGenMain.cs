@@ -116,6 +116,8 @@ namespace PlanetGen
 
         private NativeList<float4> cpuSegments;
         private MarchingSquaresCPU.PolylineData cpuPolylines;
+        private NativeList<MarchingSquaresCPU.ColliderData> colliderData;
+        private List<EdgeCollider2D> cachedColliders = new List<EdgeCollider2D>();
 
 
         // Performance tracking
@@ -181,6 +183,7 @@ namespace PlanetGen
 
             cpuSegments = new NativeList<float4>(Allocator.Persistent);
             cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
+            colliderData = new NativeList<MarchingSquaresCPU.ColliderData>(Allocator.Persistent);
         }
 
         void RegenField()
@@ -219,23 +222,37 @@ namespace PlanetGen
                     stopwatch.Reset();
                 }
 
-                // --- Step 2: Extract Polylines ---
+                // // --- Step 2: Extract Polylines ---
+                // if (enablePolylineGeneration)
+                // {
+                //     if (showPerformanceStats) stopwatch.Start();
+                //
+                //     if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
+                //     cpuPolylines = MarchingSquaresCPU.ExtractPolylinesBurst(cpuSegments, Allocator.Persistent);
+                //
+                //
+                //
+                //     if (showPerformanceStats)
+                //     {
+                //         stopwatch.Stop();
+                //         lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
+                //         lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+                //
+                //         print($"{lastPolylineCount} polylines took {lastPolylineGenerationTime} ms");
+                //     }
+                // }
+
                 if (enablePolylineGeneration)
                 {
                     if (showPerformanceStats) stopwatch.Start();
-
                     if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesBurst(cpuSegments, Allocator.Persistent);
+                    if (colliderData.IsCreated) colliderData.Dispose();
 
-
-
-                    if (showPerformanceStats)
+                    if (createColliders)
                     {
-                        stopwatch.Stop();
-                        lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
-                        lastPolylineCount = cpuPolylines.PolylineRanges.Length;
-
-                        print($"{lastPolylineCount} polylines took {lastPolylineGenerationTime} ms");
+                        cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(cpuSegments, out colliderData,
+                            3, Allocator.Persistent);
+                        UpdateCollidersFromData();
                     }
                 }
             }
@@ -262,6 +279,48 @@ namespace PlanetGen
             sdfRenderer.material.SetFloat("_Alpha", sdfDisplayOpacity);
             sdfRenderer.material.SetFloat("_Mult", sdfDisplayMult);
             sdfRenderer.enabled = enableSdfPreview;
+        }
+        
+        private void UpdateCollidersFromData()
+        {
+            // Disable excess colliders
+            for (int i = colliderData.Length; i < cachedColliders.Count; i++)
+            {
+                if (cachedColliders[i] != null) cachedColliders[i].enabled = false;
+            }
+
+            // Update/create colliders from data
+            for (int i = 0; i < colliderData.Length; i++)
+            {
+                var data = colliderData[i];
+        
+                EdgeCollider2D collider;
+                if (i < cachedColliders.Count)
+                {
+                    collider = cachedColliders[i];
+                    collider.enabled = true;
+                }
+                else
+                {
+                    var go = new GameObject($"Collider_{i}");
+                    go.transform.SetParent(collidersObject.transform);
+                    collider = go.AddComponent<EdgeCollider2D>();
+                    cachedColliders.Add(collider);
+                }
+
+                // Set properties
+                collider.sharedMaterial = colliderMaterial;
+                collider.edgeRadius = colliderThickness * 0.01f;
+
+                // Convert points
+                var points = new Vector2[data.PointCount];
+                for (int j = 0; j < data.PointCount; j++)
+                {
+                    var point = cpuPolylines.AllPoints[data.StartIndex + j];
+                    points[j] = new Vector2(point.x, point.y);
+                }
+                collider.points = points;
+            }
         }
 
         #endregion
@@ -325,7 +384,6 @@ namespace PlanetGen
             //     //     Debug.Log($"  Point {pointIndex}: ({point.x:F3}, {point.y:F3})");
             //     // }
             // }
-            
         }
 
         private void DrawCPUSegments()
@@ -363,7 +421,36 @@ namespace PlanetGen
             }
         }
 
+        #endregion
+        #region Brush Support Methods
 
+        /// <summary>
+        /// Gets a reference to the current field data for brush operations.
+        /// </summary>
+        public FieldGen.FieldGen.FieldData GetFieldData()
+        {
+            return field_textures;
+        }
+
+        /// <summary>
+        /// Updates the GPU textures after brush modifications and triggers regeneration.
+        /// Call this after modifying the scalar field data with the brush.
+        /// </summary>
+        public void UpdateFieldFromBrush()
+        {
+            if (!field_textures.IsDataValid)
+                return;
+    
+            // Update GPU textures from the modified native arrays
+            fieldGen.UpdateGPUTextures(ref field_textures);
+    
+            // Update the field display
+            fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarFieldTexture);
+            fieldRenderer.material.SetTexture("_ColorTex", field_textures.Colors);
+    
+            // Regenerate compute pipeline and marching squares
+            RegenCompute();
+        }
 
         #endregion
     }
