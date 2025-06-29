@@ -1,13 +1,15 @@
-using Unity.Jobs;
+using System.Collections.Generic;
 using Unity.Collections;
+using Unity.Jobs;
 using XNode;
 
-namespace PlanetGen.FieldGen2.Graph
+namespace PlanetGen.FieldGen2.Graph.Nodes
 {
     public abstract class BaseNode: Node
     {
         // required, but unused due to our graph compiler architecture
         public abstract override object GetValue(NodePort port);
+
         /// <summary>
         /// 
         /// </summary>
@@ -15,6 +17,8 @@ namespace PlanetGen.FieldGen2.Graph
         /// <param name="textureSize">The size of the output texture.</param>
         /// <param name="outputBuffer">The NativeArray to write the result into.</param>
         /// <returns>A new JobHandle that includes this node's job.</returns>
-        public abstract JobHandle Schedule(JobHandle dependency, int textureSize, ref NativeArray<float> outputBuffer);        
+        // public abstract JobHandle Schedule(JobHandle dependency, int textureSize, ref NativeArray<float> outputBuffer);
+        public abstract JobHandle Schedule(JobHandle dependency, int textureSize, List<NativeArray<float>> tempBuffers,
+            ref NativeArray<float> outputBuffer);
     }
 }

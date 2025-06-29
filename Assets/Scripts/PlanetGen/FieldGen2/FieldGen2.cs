@@ -1,8 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using PlanetGen.FieldGen2.Graph;
+using PlanetGen.FieldGen2.Graph.Nodes;
 using Sirenix.OdinInspector;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace PlanetGen.FieldGen2
@@ -17,6 +21,7 @@ namespace PlanetGen.FieldGen2
         private bool isJobRunning = false;
         private JobHandle finalJobHandle;
         private NativeArray<float> finalOutputBuffer;
+        private List<NativeArray<float>> tempBuffers;
 
         [Button("Generate Planet", ButtonSizes.Large)] 
         public void Generate()
@@ -26,6 +31,17 @@ namespace PlanetGen.FieldGen2
                 return;
             }
 
+            CompileAndRunGraph();
+        }
+
+        public void OnValidate()
+        {
+            print("a");
+            if (isJobRunning)
+            {
+                print("b");
+                return;
+            }
             CompileAndRunGraph();
         }
 
@@ -46,8 +62,10 @@ namespace PlanetGen.FieldGen2
 
             isJobRunning = true;
 
+            tempBuffers = new List<NativeArray<float>>();
+            
             finalOutputBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
-            finalJobHandle = outputNode.Schedule(new JobHandle(), textureSize, ref finalOutputBuffer);
+            finalJobHandle = outputNode.Schedule(new JobHandle(), textureSize, tempBuffers, ref finalOutputBuffer);
         }
 
         void Update()
@@ -58,9 +76,26 @@ namespace PlanetGen.FieldGen2
             {
                 finalJobHandle.Complete();
 
-                Debug.Log($"Generated Data Sample. First pixel: {finalOutputBuffer[0]}, Middle pixel: {finalOutputBuffer[finalOutputBuffer.Length / 2]}");
+                // Add more detailed debugging
+                Debug.Log($"Job completed! Buffer length: {finalOutputBuffer.Length}");
+        
+                // Sample a few values to see what we actually got
+                float minVal = float.MaxValue, maxVal = float.MinValue;
+                int zeroCount = 0, oneCount = 0;
+        
+                for (int i = 0; i < finalOutputBuffer.Length; i++)
+                {
+                    float val = finalOutputBuffer[i];
+                    if (val < minVal) minVal = val;
+                    if (val > maxVal) maxVal = val;
+                    if (math.abs(val) < 0.001f) zeroCount++;
+                    if (math.abs(val - 1.0f) < 0.001f) oneCount++;
+                }
+        
+                Debug.Log($"Value range: {minVal} to {maxVal}");
+                Debug.Log($"Zero values: {zeroCount}, One values: {oneCount}");
+                Debug.Log($"First few values: {finalOutputBuffer[0]}, {finalOutputBuffer[1]}, {finalOutputBuffer[2]}");
 
-                
                 Texture2D tex = new Texture2D(textureSize, textureSize, TextureFormat.RFloat, false);
                 tex.SetPixelData(finalOutputBuffer, 0);
                 tex.Apply();
@@ -71,13 +106,22 @@ namespace PlanetGen.FieldGen2
                         Destroy(outputRenderer.material.mainTexture);
                     }
                     outputRenderer.material.mainTexture = tex;
-
-                    // outputRenderer.sharedMaterial.mainTexture = tex;
                 }
+
+                // Clean up temp buffers
+                foreach (var buffer in tempBuffers)
+                {
+                    if (buffer.IsCreated)
+                        buffer.Dispose();
+                }
+                tempBuffers.Clear();
 
                 finalOutputBuffer.Dispose();
                 isJobRunning = false;
             }
+            
+            
+
         }
 
         void OnDestroy()

@@ -359,11 +359,9 @@ namespace PlanetGen.FieldGen
 
             public void Execute(int index)
             {
-                // Convert 1D index to 2D coordinates
                 int x = index % texWidth;
                 int y = index / texWidth;
 
-                // Calculate squared distance from center
                 float dx = x - centerX;
                 float dy = y - centerY;
                 float distanceSquared = dx * dx + dy * dy;
@@ -371,21 +369,13 @@ namespace PlanetGen.FieldGen
                 float angle = math.atan2(dy, dx);
                 
                 float nze = noise.snoise(new float2(angle * frequency, 0));
-                
-                
-                // Normalize the distance
+
                 float normalizedDistanceSquared = distanceSquared * normalizer;
 
-                // Convert pixel coordinates to UV space (0-1 range) for resolution independence
                 float2 uv = new float2((float)x / texWidth, (float)y / texWidth);
                 float2 pos = uv * frequency + new float2(seed, seed);
-                // float nze = noise.snoise(pos);
-
-                // Keep the original amplitude scaling but make it resolution-independent
-                // The original code used amplitude * 0.01f, so we maintain that relative scale
                 float scaledAmplitude = amplitude * 0.01f;
 
-                // Determine pixel value based on radius
                 float val = (normalizedDistanceSquared < (radius * radius) + (nze * scaledAmplitude) ? 1.0f : 0f);
 
                 fieldData[index] = val;
@@ -414,29 +404,23 @@ namespace PlanetGen.FieldGen
                 int x = index % TexWidth;
                 int y = index / TexWidth;
 
-                // A simple way to handle edges is to not blur them.
-                // For a small blur radius, this is often visually acceptable.
+
                 if (x == 0 || x == TexWidth - 1 || y == 0 || y == TexWidth - 1)
                 {
                     OutputData[index] = InputData[index];
                     return;
                 }
-                
-                
-                
-                // Sum the values in a 3x3 kernel around the current pixel.
+
                 float total = 0f;
                 for (int j = -1; j <= 1; j++)
                 {
                     for (int k = -1; k <= 1; k++)
                     {
-                        // Calculate the 1D index of the neighboring pixel
                         int neighborIndex = (y + j) * TexWidth + (x + k);
                         total += InputData[neighborIndex];
                     }
                 }
                 
-                // The output is the average of the 9 pixels.
                 OutputData[index] = total / 9.0f;
             }
         }
