@@ -486,8 +486,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2ddc6815d65248f8a45dce9dcdb130f5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  brushRadius: 0.05
-  brushStrength: 1
+  brushRadius: 0.128
+  brushStrength: 8.22
   digAction: {fileID: -769306718896508156, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
   buildAction: {fileID: -8018442124464080408, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
   mousePositionAction: {fileID: 6793670743142013549, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
