@@ -4,6 +4,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace PlanetGen.FieldGen
@@ -367,13 +368,18 @@ namespace PlanetGen.FieldGen
                 float dy = y - centerY;
                 float distanceSquared = dx * dx + dy * dy;
 
+                float angle = math.atan2(dy, dx);
+                
+                float nze = noise.snoise(new float2(angle * frequency, 0));
+                
+                
                 // Normalize the distance
                 float normalizedDistanceSquared = distanceSquared * normalizer;
 
                 // Convert pixel coordinates to UV space (0-1 range) for resolution independence
                 float2 uv = new float2((float)x / texWidth, (float)y / texWidth);
                 float2 pos = uv * frequency + new float2(seed, seed);
-                float nze = noise.snoise(pos);
+                // float nze = noise.snoise(pos);
 
                 // Keep the original amplitude scaling but make it resolution-independent
                 // The original code used amplitude * 0.01f, so we maintain that relative scale
@@ -415,6 +421,8 @@ namespace PlanetGen.FieldGen
                     OutputData[index] = InputData[index];
                     return;
                 }
+                
+                
                 
                 // Sum the values in a 3x3 kernel around the current pixel.
                 float total = 0f;

@@ -17,7 +17,7 @@ namespace PlanetGen
         [Range(0.01f, 0.3f)]
         public float brushRadius = 0.05f;
         
-        [Range(0.1f, 3f)]
+        [Range(0.1f, 10f)]
         public float brushStrength = 1f;
         
         [Header("Controls")]

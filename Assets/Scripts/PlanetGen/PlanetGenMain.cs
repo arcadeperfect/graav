@@ -24,7 +24,7 @@ namespace PlanetGen
 
         [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
         [Range(0, 50f)] [TriggerFieldRegen] public float amplitude = 0.5f;
-        [Range(0, 10f)] [TriggerFieldRegen] public float frequency = 0.5f;
+        [Range(0, 50f)] [TriggerFieldRegen] public float frequency = 0.5f;
         [Range(0, 5)] [TriggerFieldRegen] public int blur;
 
         [Header("Field Preview")] [Range(0, 2)] [TriggerFieldRegen]
@@ -270,7 +270,7 @@ namespace PlanetGen
             resultRenderer.material.SetFloat("_BandStartOffset", bandStartOffset);
             resultRenderer.material.SetFloat("_BandInterval", bandInterval);
             resultRenderer.material.SetFloat("_SurfaceBrightness", 1);
-            resultRenderer.material.SetFloat("_BandBrightness", 1);
+            resultRenderer.material.SetFloat("_BandBrightness", 0.5f);
 
             resultRenderer.enabled = renderActive;
 

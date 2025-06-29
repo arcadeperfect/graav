@@ -387,6 +387,7 @@ GameObject:
   m_Component:
   - component: {fileID: 663406291}
   - component: {fileID: 663406292}
+  - component: {fileID: 663406293}
   m_Layer: 0
   m_Name: Main
   m_TagString: Untagged
@@ -410,6 +411,7 @@ Transform:
   - {fileID: 2104903703}
   - {fileID: 2003127030}
   - {fileID: 745175453}
+  - {fileID: 1557648593}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &663406292
@@ -426,24 +428,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enableFieldPreview: 0
   enableSdfPreview: 0
-  renderActive: 0
-  enableDebugDraw: 1
-  scalarFieldWidth: 512
-  radius: 0.399
-  amplitude: 9.74
-  frequency: 7.2
+  renderActive: 1
+  enableDebugDraw: 0
+  scalarFieldWidth: 256
+  radius: 0.377
+  amplitude: 2.9
+  frequency: 9.08
   blur: 5
   fieldDisplayMode: 0
   fieldDisplayOpacity: 1
   enableCPUMarchingSquares: 1
+  enablePolylineGeneration: 1
+  createColliders: 1
+  colliderMaterial: {fileID: 0}
+  colliderThickness: 0.1
   marchingSquaresThreshold: 0.5
   useFastMethod: 1
   batchSize: 4
   showPerformanceStats: 1
-  domainWarp: 0
-  domainWarpScale: 8.6
-  domainWarpIterations: 4
-  blur1: 4.48
   sdfDisplayMode: 0
   sdfDisplayOpacity: 1
   sdfDisplayMult: 1
@@ -452,28 +454,46 @@ MonoBehaviour:
   gridResolution: 128
   maxSegmentsPerCell: 32
   lineWidth: 0.072
-  domainWarp2: 0
-  domainWarp2Scale: 0
+  domainWarp2: 58.69
+  domainWarp2Scale: 4.9
   domainWarp2Iterations: 1
-  blur2: 1.1
+  blur2: 5.14
   numberOfBands: 50
-  bandStartOffset: -0.16
-  bandInterval: 0.11
-  showCPUSegments: 1
-  showGPUSegments: 1
+  bandStartOffset: -0.025
+  bandInterval: -0.025
+  showCPUSegments: 0
+  showGPUSegments: 0
+  showCPUPolylines: 1
   debugLineColor: {r: 1, g: 0, b: 0, a: 1}
   cpuDebugLineColor: {r: 0, g: 0, b: 1, a: 1}
+  polylineDebugColor: {r: 0, g: 1, b: 0, a: 1}
   debugLineDuration: 0.1
   maxDebugSegments: 10000
   computeConstantly: 1
-  enablePolylineGeneration: 0
-  createColliders: 0
-  colliderMaterial: {fileID: 0}
-  colliderThickness: 0.1
   fieldRenderer: {fileID: 2003127032}
   sdfRenderer: {fileID: 745175455}
   resultRenderer: {fileID: 2104903705}
-  collidersObject: {fileID: 0}
+  collidersObject: {fileID: 1557648592}
+--- !u!114 &663406293
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 663406289}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ddc6815d65248f8a45dce9dcdb130f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  brushRadius: 0.05
+  brushStrength: 1
+  digAction: {fileID: -769306718896508156, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
+  buildAction: {fileID: -8018442124464080408, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
+  mousePositionAction: {fileID: 6793670743142013549, guid: 8c6a10984e8844d8f95b5d0d48eeee30, type: 3}
+  showBrushCursor: 1
+  brushCursorMaterial: {fileID: 2100000, guid: 8b1d2fdf52a21448d88c84e62d1cbe8e, type: 2}
+  updatesPerSecond: 60
 --- !u!1 &745175452
 GameObject:
   m_ObjectHideFlags: 0
@@ -631,6 +651,37 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1557648592
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1557648593}
+  m_Layer: 0
+  m_Name: Colliders
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1557648593
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1557648592}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 663406291}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2003127029
 GameObject:

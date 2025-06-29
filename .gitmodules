@@ -1,0 +1,6 @@
+[submodule "Assets/xNode-OdinExtensions"]
+	path = Assets/xNode-OdinExtensions
+	url = https://github.com/KAJed82/xNode-OdinExtensions.git
+[submodule "Assets/xNode"]
+	path = Assets/xNode
+	url = https://github.com/KAJed82/xNode.git
