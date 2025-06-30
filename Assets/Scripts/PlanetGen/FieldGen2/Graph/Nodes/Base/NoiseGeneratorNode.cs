@@ -34,13 +34,14 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Base
         }
 
         public JobHandle ScheduleFloat(JobHandle dependency, int textureSize, 
-            List<NativeArray<float>> tempBuffers, ref NativeArray<float> outputBuffer)
+            TempBufferManager tempBuffers, ref NativeArray<float> outputBuffer)
         {
-            return ScheduleNoiseGeneration(dependency, textureSize, tempBuffers, ref outputBuffer);
+            var context = GetContext();
+            return ScheduleNoiseGeneration(dependency, textureSize, tempBuffers, ref outputBuffer, context);
         }
 
         
         protected abstract JobHandle ScheduleNoiseGeneration(JobHandle dependency, int textureSize, 
-            List<NativeArray<float>> tempBuffers, ref NativeArray<float> outputBuffer);
+            TempBufferManager tempBuffers, ref NativeArray<float> outputBuffer, EvaluationContext context);
     }
 }
