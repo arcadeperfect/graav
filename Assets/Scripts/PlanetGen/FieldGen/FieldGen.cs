@@ -169,7 +169,7 @@ namespace PlanetGen.FieldGen
             if (blurIterations > 0)
             {
                 // We need a second buffer to ping-pong data between for blurring
-                NativeArray<float> blurBuffer = new NativeArray<float>(tex_width * tex_width, Allocator.TempJob);
+                NativeArray<float> blurBuffer = new NativeArray<float>(tex_width * tex_width, Allocator.Persistent);
 
                 NativeArray<float> readBuffer = inTEX.ScalarFieldArray;
                 NativeArray<float> writeBuffer = blurBuffer;

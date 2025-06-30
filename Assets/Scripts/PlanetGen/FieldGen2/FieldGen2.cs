@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Nodes;
+using PlanetGen.FieldGen2.Graph.Nodes.Base;
+using PlanetGen.FieldGen2.Graph.Nodes.Outputs;
 using Sirenix.OdinInspector;
 using Unity.Collections;
 using Unity.Jobs;
@@ -20,10 +22,28 @@ namespace PlanetGen.FieldGen2
 
         private bool isJobRunning = false;
         private JobHandle finalJobHandle;
-        private NativeArray<float> finalOutputBuffer;
+        private PlanetData finalOutputBuffer;
         private List<NativeArray<float>> tempBuffers;
 
-        [Button("Generate Planet", ButtonSizes.Large)] 
+        [Button("Generate Planet", ButtonSizes.Large)]
+        public void GeneratePlanet()
+        {
+            regenQueued = true;
+        }
+
+        private bool regenQueued = false;
+        
+        public void Start()
+        {
+            BaseNode.OnAnyNodeChanged += OnNodeParameterChanged;
+        }
+        
+        void OnNodeParameterChanged()
+        {
+            regenQueued = true;
+
+        }
+        
         public void Generate()
         {
             if (isJobRunning)
@@ -34,16 +54,6 @@ namespace PlanetGen.FieldGen2
             CompileAndRunGraph();
         }
 
-        public void OnValidate()
-        {
-            print("a");
-            if (isJobRunning)
-            {
-                print("b");
-                return;
-            }
-            CompileAndRunGraph();
-        }
 
         private void CompileAndRunGraph()
         {
@@ -52,52 +62,55 @@ namespace PlanetGen.FieldGen2
                 Debug.LogError("Graph is null");
                 return;
             }
-
+            
             OutputNode outputNode = graph.nodes.OfType<OutputNode>().FirstOrDefault();
             if (outputNode == null)
             {
                 Debug.LogError("Output node is null");
                 return;
             }
-
-            isJobRunning = true;
-
+            
+            
+            isJobRunning = true; 
+            
             tempBuffers = new List<NativeArray<float>>();
             
-            finalOutputBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
-            finalJobHandle = outputNode.Schedule(new JobHandle(), textureSize, tempBuffers, ref finalOutputBuffer);
+            finalOutputBuffer = new PlanetData(textureSize);
+            // finalJobHandle = outputNode.Schedule(new JobHandle(), textureSize, tempBuffers, ref finalOutputBuffer);
+            finalJobHandle = outputNode.SchedulePlanetData(new JobHandle(), textureSize, tempBuffers, ref finalOutputBuffer);
         }
 
         void Update()
         {
+            // First, check if we need to kick off a new generation.
+            // We do this at the top of Update to be very responsive.
+            if (regenQueued && !isJobRunning)
+            {
+                regenQueued = false; // Reset the flag
+                Generate(); // Start the generation immediately
+            }
+
+            // Your existing logic for checking completion remains the same.
             if (!isJobRunning) return;
 
             if (finalJobHandle.IsCompleted)
             {
                 finalJobHandle.Complete();
-
-                // Add more detailed debugging
-                Debug.Log($"Job completed! Buffer length: {finalOutputBuffer.Length}");
+                
+                // float minVal = float.MaxValue, maxVal = float.MinValue;
+                // int zeroCount = 0, oneCount = 0;
         
-                // Sample a few values to see what we actually got
-                float minVal = float.MaxValue, maxVal = float.MinValue;
-                int zeroCount = 0, oneCount = 0;
-        
-                for (int i = 0; i < finalOutputBuffer.Length; i++)
-                {
-                    float val = finalOutputBuffer[i];
-                    if (val < minVal) minVal = val;
-                    if (val > maxVal) maxVal = val;
-                    if (math.abs(val) < 0.001f) zeroCount++;
-                    if (math.abs(val - 1.0f) < 0.001f) oneCount++;
-                }
-        
-                Debug.Log($"Value range: {minVal} to {maxVal}");
-                Debug.Log($"Zero values: {zeroCount}, One values: {oneCount}");
-                Debug.Log($"First few values: {finalOutputBuffer[0]}, {finalOutputBuffer[1]}, {finalOutputBuffer[2]}");
+                // for (int i = 0; i < finalOutputBuffer.Length; i++)
+                // {
+                //     float val = finalOutputBuffer[i];
+                //     if (val < minVal) minVal = val;
+                //     if (val > maxVal) maxVal = val;
+                //     if (math.abs(val) < 0.001f) zeroCount++;
+                //     if (math.abs(val - 1.0f) < 0.001f) oneCount++;
+                // }
 
                 Texture2D tex = new Texture2D(textureSize, textureSize, TextureFormat.RFloat, false);
-                tex.SetPixelData(finalOutputBuffer, 0);
+                tex.SetPixelData(finalOutputBuffer.Scalar, 0);
                 tex.Apply();
 
                 if (outputRenderer != null)
@@ -119,17 +132,34 @@ namespace PlanetGen.FieldGen2
                 finalOutputBuffer.Dispose();
                 isJobRunning = false;
             }
-            
-            
-
         }
 
         void OnDestroy()
         {
+            BaseNode.OnAnyNodeChanged  -= OnNodeParameterChanged;
+            
             if (isJobRunning)
             {
                 finalJobHandle.Complete();
+
+                foreach (var buffer in tempBuffers)
+                {
+                    if(buffer.IsCreated)
+                        buffer.Dispose();
+                }
+                tempBuffers.Clear();
                 finalOutputBuffer.Dispose();
+                isJobRunning = false;
+            }
+
+            if (outputRenderer != null && outputRenderer.material != null &&
+                outputRenderer.material.mainTexture != null)
+            {
+                // Important: check if the texture is a RenderTexture or Texture2D
+                if (outputRenderer.material.mainTexture is Texture2D)
+                {
+                    Destroy(outputRenderer.material.mainTexture);
+                }
             }
         }
     }
