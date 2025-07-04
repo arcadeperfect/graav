@@ -96,7 +96,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 0.15
+  deformationAmplitude: 0.08
 --- !u!114 &-3640118438710060506
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -119,7 +119,10 @@ MonoBehaviour:
       _node: {fileID: -3640118438710060506}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: vectorInput
+        node: {fileID: 8500899236511074427}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -258,4 +261,4 @@ MonoBehaviour:
       _dynamic: 0
   vectorInput: {fileID: 0}
   output: {fileID: 0}
-  expansionAmount: 0.22
+  expansionAmount: 0.4
