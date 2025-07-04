@@ -12,7 +12,8 @@ namespace PlanetGen.FieldGen2.Graph
         public List<NativeArray<float>> FloatBuffers;
         public List<NativeArray<float4>> Float4Buffers;
         public List<NativeArray<int>> IntBuffers;
-        
+        public List<VectorData> VectorBuffers; // Add this
+    
         public TempBufferManager(bool initialize = true)
         {
             if (initialize)
@@ -20,12 +21,14 @@ namespace PlanetGen.FieldGen2.Graph
                 FloatBuffers = new List<NativeArray<float>>();
                 Float4Buffers = new List<NativeArray<float4>>();
                 IntBuffers = new List<NativeArray<int>>();
+                VectorBuffers = new List<VectorData>(); // Add this
             }
             else
             {
                 FloatBuffers = null;
                 Float4Buffers = null;
                 IntBuffers = null;
+                VectorBuffers = null; // Add this
             }
         }
         
@@ -36,6 +39,12 @@ namespace PlanetGen.FieldGen2.Graph
             FloatBuffers.Add(planetData.Altitude);
             FloatBuffers.Add(planetData.Angle);
             Float4Buffers.Add(planetData.Color);
+        }
+        
+        // Convenience method for adding VectorData buffers
+        public void AddVectorData(VectorData vectorData)
+        {
+            VectorBuffers.Add(vectorData);
         }
         
         // Method to dispose all buffers (called by FieldGen2)
@@ -70,62 +79,17 @@ namespace PlanetGen.FieldGen2.Graph
                 }
                 IntBuffers.Clear();
             }
+            if (VectorBuffers != null)
+            {
+                foreach (var buffer in VectorBuffers)
+                {
+                    if (buffer.IsValid)
+                        buffer.Dispose();
+                }
+                VectorBuffers.Clear();
+            }
         }
     }
 
-    public struct OutputBufferManager
-    {
-        // Simple outputs: Scalar and Color only
-        public NativeArray<float> ScalarOutput;
-        public NativeArray<float4> ColorOutput;
-        public PlanetData PlanetDataOutput;
-        
-        // Flags to track which outputs are valid/requested
-        public bool HasScalarOutput;
-        public bool HasColorOutput;
-        public bool HasPlanetDataOutput;
-        
-        public OutputBufferManager(bool initialize = true)
-        {
-            if (initialize)
-            {
-                ScalarOutput = default;
-                ColorOutput = default;
-                PlanetDataOutput = default;
-                
-                HasScalarOutput = false;
-                HasColorOutput = false;
-                HasPlanetDataOutput = false;
-            }
-            else
-            {
-                ScalarOutput = default;
-                ColorOutput = default;
-                PlanetDataOutput = default;
-                
-                HasScalarOutput = false;
-                HasColorOutput = false;
-                HasPlanetDataOutput = false;
-            }
-        }
-        
-        // Methods to set specific output types
-        public void SetScalarOutput(NativeArray<float> buffer)
-        {
-            ScalarOutput = buffer;
-            HasScalarOutput = true;
-        }
-        
-        public void SetColorOutput(NativeArray<float4> buffer)
-        {
-            ColorOutput = buffer;
-            HasColorOutput = true;
-        }
-        
-        public void SetPlanetDataOutput(PlanetData buffer)
-        {
-            PlanetDataOutput = buffer;
-            HasPlanetDataOutput = true;
-        }
-    }
+    // ... rest of the file remains the same
 }

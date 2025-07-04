@@ -58,7 +58,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
             float circleValue = altitude <= deformedRadius ? 1.0f : 0.0f;
 
             // Apply smooth falloff at the edge
-            float falloffWidth = 0.02f;
+            float falloffWidth = 0;
             if (altitude > deformedRadius - falloffWidth && altitude <= deformedRadius + falloffWidth)
             {
                 float falloff = (deformedRadius + falloffWidth - altitude) / (2.0f * falloffWidth);
