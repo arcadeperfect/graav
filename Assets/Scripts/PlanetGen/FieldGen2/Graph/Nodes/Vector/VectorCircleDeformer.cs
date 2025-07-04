@@ -11,10 +11,10 @@ using XNode;
 namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
 {
     [BurstCompile(CompileSynchronously = true)]
-    public struct VectorCircleDeformJob : IJobParallelFor
+   public struct VectorCircleDeformJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<float2> InputVertices;
-        [ReadOnly] public NativeArray<float> DeformationNoise;
+        [ReadOnly] public NativeArray<float> DeformationNoise; // This is now treated as a 2D texture map
         [WriteOnly] public NativeArray<float2> OutputVertices;
 
         [ReadOnly] public int textureSize;
@@ -24,97 +24,76 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
 
         public void Execute(int index)
         {
-            // Get input vertex in polar coordinates (angle, radius)
             float2 inputVertex = InputVertices[index];
             float angle = inputVertex.x;
             float radius = inputVertex.y;
 
-            // Sample deformation noise consistently regardless of vertex count
-            float deformation = SampleDeformationNoise(angle);
+            // *** CHANGED: Sample deformation noise using bilinear filtering from the 2D map ***
+            float deformation = SampleDeformationNoiseBilinear(angle, radius, textureSize, DeformationNoise);
             float deformedRadius = radius + (deformation * deformationAmplitude);
             deformedRadius = math.clamp(deformedRadius, 0f, 1f);
     
-            // Sample global contribution mask at vertex position in texture space
-            float contribution = 1.0f; // Default to full contribution
+            float contribution = 1.0f;
     
-            if (hasGlobalMask)
+            if (hasGlobalMask && globalContributionMask.IsCreated)
             {
-                if (globalContributionMask.IsCreated)
-                {
-                    contribution = SampleGlobalMask(angle, radius);
-                }
-                // If hasGlobalMask is true but array isn't created, we'll get a job system error anyway
+                // *** CHANGED: Use bilinear filtering for global contribution mask ***
+                contribution = SampleGlobalMaskBilinear(angle, radius, textureSize, globalContributionMask);
             }
-            // If hasGlobalMask is false, use default contribution of 1.0f
-    
-            // Blend between original and deformed based on global contribution
+            
             float finalRadius = math.lerp(radius, deformedRadius, contribution);
     
-            // Output final vertex in polar coordinates
             OutputVertices[index] = new float2(angle, finalRadius);
         }
         
-        private float SampleDeformationNoise(float angle)
+        // *** NEW/MODIFIED: Helper function for bilinear sampling of a 2D mask from polar coordinates ***
+        private float SampleGlobalMaskBilinear(float angle, float radius, int texSize, NativeArray<float> mask)
         {
-            // Sample noise consistently regardless of vertex count
-            float normalizedAngle = (angle + math.PI) / (2.0f * math.PI); // Convert [-π, π] to [0, 1]
+            // Convert polar vertex position to texture UV coordinates [0, 1]
+            float x_cartesian = math.cos(angle) * radius;
+            float y_cartesian = math.sin(angle) * radius;
             
-            // Sample the noise texture along a circular path
-            int sampleCount = textureSize;
-            float samplePosition = normalizedAngle * sampleCount;
-            int baseSample = (int)math.floor(samplePosition);
-            float lerpFactor = samplePosition - baseSample;
-            
-            // Get two samples for interpolation
-            int sample1 = baseSample % sampleCount;
-            int sample2 = (baseSample + 1) % sampleCount;
-            
-            // Convert samples to 2D texture coordinates on a circle
-            float angle1 = (float)sample1 / sampleCount * 2.0f * math.PI;
-            float angle2 = (float)sample2 / sampleCount * 2.0f * math.PI;
-            
-            // Sample noise at consistent radius
-            float sampleRadius = 0.5f;
-            
-            // Get noise values for interpolation
-            float noise1 = SampleNoiseAtPosition(angle1, sampleRadius);
-            float noise2 = SampleNoiseAtPosition(angle2, sampleRadius);
-            
-            // Interpolate between the two samples
-            return math.lerp(noise1, noise2, lerpFactor);
+            float u = (x_cartesian + 1.0f) * 0.5f; // u in [0, 1]
+            float v = (y_cartesian + 1.0f) * 0.5f; // v in [0, 1]
+
+            // Convert to pixel coordinates (float precision for interpolation)
+            float pixelX = u * (texSize - 1);
+            float pixelY = v * (texSize - 1);
+
+            // Get the integer coordinates of the top-left pixel for interpolation
+            int x0 = (int)math.floor(pixelX);
+            int y0 = (int)math.floor(pixelY);
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+
+            // Get the fractional parts for lerping
+            float fx = pixelX - x0;
+            float fy = pixelY - y0;
+
+            // Clamp coordinates to valid texture range
+            x0 = math.clamp(x0, 0, texSize - 1);
+            y0 = math.clamp(y0, 0, texSize - 1);
+            x1 = math.clamp(x1, 0, texSize - 1);
+            y1 = math.clamp(y1, 0, texSize - 1);
+
+            // Get values from the 1D NativeArray, treating it as 2D
+            float c00 = mask[y0 * texSize + x0];
+            float c10 = mask[y0 * texSize + x1];
+            float c01 = mask[y1 * texSize + x0];
+            float c11 = mask[y1 * texSize + x1];
+
+            // Bilinear interpolation
+            float c0 = math.lerp(c00, c10, fx);
+            float c1 = math.lerp(c01, c11, fx);
+            return math.lerp(c0, c1, fy);
         }
         
-        private float SampleGlobalMask(float angle, float radius)
+        // *** NEW/MODIFIED: Renamed and adjusted to use bilinear for internal deformation noise ***
+        private float SampleDeformationNoiseBilinear(float angle, float radius, int texSize, NativeArray<float> noiseMap)
         {
-            // Convert polar vertex position to texture coordinates
-            float x = math.cos(angle) * radius;
-            float y = math.sin(angle) * radius;
-            
-            // Map from [-1,1] to texture coordinates [0, textureSize-1]
-            int texX = (int)((x + 1.0f) * 0.5f * (textureSize - 1));
-            int texY = (int)((y + 1.0f) * 0.5f * (textureSize - 1));
-            texX = math.clamp(texX, 0, textureSize - 1);
-            texY = math.clamp(texY, 0, textureSize - 1);
-            
-            int maskIndex = texY * textureSize + texX;
-            return globalContributionMask[math.clamp(maskIndex, 0, globalContributionMask.Length - 1)];
-        }
-        
-        private float SampleNoiseAtPosition(float angle, float radius)
-        {
-            // Convert polar to cartesian for noise sampling
-            float noiseX = math.cos(angle) * radius;
-            float noiseY = math.sin(angle) * radius;
-
-            // Map to texture coordinates
-            int noiseIndexX = (int)((noiseX + 1.0f) * 0.5f * (textureSize - 1));
-            int noiseIndexY = (int)((noiseY + 1.0f) * 0.5f * (textureSize - 1));
-            noiseIndexX = math.clamp(noiseIndexX, 0, textureSize - 1);
-            noiseIndexY = math.clamp(noiseIndexY, 0, textureSize - 1);
-            int noiseIndex = noiseIndexY * textureSize + noiseIndexX;
-            noiseIndex = math.clamp(noiseIndex, 0, DeformationNoise.Length - 1);
-
-            return DeformationNoise[noiseIndex];
+            // This now simply reuses the bilinear sampling logic since DeformationNoise
+            // is now also treated as a 2D map.
+            return SampleGlobalMaskBilinear(angle, radius, texSize, noiseMap);
         }
     }
 
@@ -128,21 +107,16 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
             TempBufferManager tempBuffers, ref VectorData outputBuffer,
             IVectorOutput vectorInput, IFloatOutput deformationInput, EvaluationContext context)
         {
-            // Create temp buffer for input vector
             var inputVectorBuffer = new VectorData(outputBuffer.Vertices.Length);
             tempBuffers.AddVectorData(inputVectorBuffer);
 
-            // Schedule the input vector
             JobHandle vectorHandle = vectorInput.ScheduleVector(dependency, textureSize, tempBuffers, ref inputVectorBuffer);
 
-            // Create temp buffer for deformation noise
             var deformationBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
             tempBuffers.FloatBuffers.Add(deformationBuffer);
 
-            // Schedule the deformation input
             JobHandle deformationHandle = deformationInput.ScheduleFloat(vectorHandle, textureSize, tempBuffers, ref deformationBuffer);
 
-            // Create and schedule the deformation job
             var deformJob = new VectorCircleDeformJob
             {
                 InputVertices = inputVectorBuffer.Vertices,
@@ -156,7 +130,6 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
 
             JobHandle deformHandle = deformJob.Schedule(inputVectorBuffer.Count, 64, deformationHandle);
             
-            // Set output vertex count to match input
             outputBuffer.SetVertexCount(inputVectorBuffer.Count);
 
             return deformHandle;

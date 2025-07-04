@@ -507,9 +507,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 723e7b6159e994d09b9d0bf2540a43c4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  graph: {fileID: 11400000, guid: 52f9c15996bfe4ce29b2a904362b02bd, type: 2}
+  graphLayers:
+  - graph: {fileID: 11400000, guid: a58b7e615a6ad4b5facca7b291b934d6, type: 2}
+    baseWeight: 1
+    weightSeed: 0
+  - graph: {fileID: 11400000, guid: eabd7590dcc054cffb6db0fd49c2d519, type: 2}
+    baseWeight: 1
+    weightSeed: 0
+  circleVertexCount: 64
+  circleRadius: 0.5
   textureSize: 512
-  outputRenderer: {fileID: 2115854264}
+  weightFrequency: 3
+  masterWeightSeed: 42
+  drawDebugLines: 1
+  debugColor: {r: 1, g: 0, b: 0, a: 1}
+  debugScale: 10
+  continuousDebugDraw: 1
 --- !u!1 &2115854262
 GameObject:
   m_ObjectHideFlags: 0
@@ -527,7 +540,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!23 &2115854264
 MeshRenderer:
   m_ObjectHideFlags: 0
