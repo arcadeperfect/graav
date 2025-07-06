@@ -153,7 +153,7 @@ MonoBehaviour:
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
   output: {fileID: 0}
-  warpStrength: 6.6
+  warpStrength: 9.64
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -174,9 +174,9 @@ MonoBehaviour:
   - {fileID: -6240837201335320975}
   - {fileID: -7063200831616992041}
   - {fileID: 1277561118898541402}
-  - {fileID: -6735227374477596016}
-  - {fileID: 6776538594016993990}
   - {fileID: 8972927082550489544}
+  - {fileID: 6776538594016993990}
+  - {fileID: -6735227374477596016}
   globalContribution: 1
   gobalSeed: 0
 --- !u!114 &1277561118898541402
@@ -296,7 +296,7 @@ MonoBehaviour:
   m_Name: Raster Output
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 408, y: -616}
+  position: {x: 1000, y: -584}
   folded: 0
   ports:
     keys:
@@ -362,7 +362,7 @@ MonoBehaviour:
   m_Name: Vector Circle Deformer
   m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleDeformerNode
   graph: {fileID: 11400000}
-  position: {x: -124.85823, y: -135.22244}
+  position: {x: -136, y: -120}
   folded: 0
   ports:
     keys:
@@ -409,7 +409,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 0.28
+  deformationAmplitude: 0
 --- !u!114 &8972927082550489544
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -443,7 +443,7 @@ MonoBehaviour:
       _dynamic: 0
   output: {fileID: 0}
   frequency: 5.36
-  amplitude: 1
+  amplitude: 2.27
   seed: 12345
   octaves: 4
   lacunarity: 2

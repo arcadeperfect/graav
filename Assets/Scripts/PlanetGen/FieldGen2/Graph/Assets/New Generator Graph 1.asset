@@ -244,7 +244,10 @@ MonoBehaviour:
       _node: {fileID: 2104905435081346368}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: vectorInput
+        node: {fileID: -6735227374477596016}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -297,7 +300,7 @@ MonoBehaviour:
   m_Name: Raster Output
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 408, y: -616}
+  position: {x: 520, y: -616}
   folded: 0
   ports:
     keys:

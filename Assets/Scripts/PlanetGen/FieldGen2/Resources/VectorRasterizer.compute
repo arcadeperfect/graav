@@ -1,0 +1,69 @@
+// VectorRasterizer.compute
+#pragma kernel CSMain
+
+RWTexture2D<float4> ScalarResult;
+RWTexture2D<float4> AltitudeResult;  
+RWTexture2D<float4> ColorResult;
+RWTexture2D<float4> AngleResult;
+
+StructuredBuffer<float2> Vertices;
+int VertexCount;
+float WorldSize;
+int TextureSize;
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)TextureSize || id.y >= (uint)TextureSize)
+        return;
+        
+    // Convert pixel to world coordinates
+    float worldX = ((float(id.x) / float(TextureSize - 1)) * 2.0 - 1.0) * WorldSize;
+    float worldY = ((float(id.y) / float(TextureSize - 1)) * 2.0 - 1.0) * WorldSize;
+    float2 worldPos = float2(worldX, worldY);
+    
+    // Point-in-polygon test using ray casting
+    bool inside = false;
+    float minDistance = 1e6;
+    
+    for (int i = 0; i < VertexCount; i++)
+    {
+        int j = (i + 1) % VertexCount;
+        float2 vi = Vertices[i];
+        float2 vj = Vertices[j];
+        
+        // Ray casting algorithm
+        if (((vi.y > worldPos.y) != (vj.y > worldPos.y)) &&
+            (worldPos.x < (vj.x - vi.x) * (worldPos.y - vi.y) / (vj.y - vi.y) + vi.x))
+        {
+            inside = !inside;
+        }
+        
+        // Calculate distance to edge for falloff
+        float2 edge = vj - vi;
+        float2 toPoint = worldPos - vi;
+        float edgeLength = length(edge);
+        
+        if (edgeLength > 1e-6)
+        {
+            float t = saturate(dot(toPoint, edge) / (edgeLength * edgeLength));
+            float2 projection = vi + t * edge;
+            float distance = length(worldPos - projection);
+            minDistance = min(minDistance, distance);
+        }
+    }
+    
+    // Calculate angle from center
+    float angle = atan2(worldY, worldX);
+    
+    // Generate outputs
+    float scalar = inside ? 1.0 : 0.0;
+    float altitude = inside ? saturate(1.0 - (minDistance * 10.0)) : 0.0;
+    float4 color = inside ? float4(0.2, 0.8, 0.3, 1.0) : float4(0.1, 0.3, 0.8, 1.0);
+    
+    // Write results
+    ScalarResult[id.xy] = float4(scalar, 0, 0, 0);
+    AltitudeResult[id.xy] = float4(altitude, 0, 0, 0);
+    ColorResult[id.xy] = color;
+    AngleResult[id.xy] = float4(angle, 0, 0, 0);
+}
