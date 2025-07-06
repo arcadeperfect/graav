@@ -38,47 +38,6 @@ MonoBehaviour:
   octaves: 4
   lacunarity: 2
   persistence: 0.5
---- !u!114 &-6735227374477596016
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
-  m_Name: Vector Circle Expander
-  m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleExpanderNode
-  graph: {fileID: 11400000}
-  position: {x: -88, y: 120}
-  folded: 0
-  ports:
-    keys:
-    - vectorInput
-    - output
-    values:
-    - _fieldName: vectorInput
-      _node: {fileID: -6735227374477596016}
-      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
-        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
-      _direction: 0
-      _connectionType: 1
-      _typeConstraint: 2
-      _dynamic: 0
-    - _fieldName: output
-      _node: {fileID: -6735227374477596016}
-      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
-        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
-      _direction: 1
-      _connectionType: 1
-      _typeConstraint: 2
-      _dynamic: 0
-  vectorInput: {fileID: 0}
-  output: {fileID: 0}
-  expansionAmount: -0.11
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -142,18 +101,18 @@ MonoBehaviour:
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
-      - fieldName: input
-        node: {fileID: 4710186832519472888}
+      - fieldName: inputRaster
+        node: {fileID: 6940786810015637400}
         reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
       _dynamic: 0
   rasterInput: {fileID: 0}
+  output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  output: {fileID: 0}
-  warpStrength: 9.64
+  warpStrength: 14.43
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -176,7 +135,7 @@ MonoBehaviour:
   - {fileID: 1277561118898541402}
   - {fileID: 8972927082550489544}
   - {fileID: 6776538594016993990}
-  - {fileID: -6735227374477596016}
+  - {fileID: 6940786810015637400}
   globalContribution: 1
   gobalSeed: 0
 --- !u!114 &1277561118898541402
@@ -308,7 +267,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
-        node: {fileID: -6240837201335320975}
+        node: {fileID: 6940786810015637400}
         reroutePoints: []
       _direction: 0
       _connectionType: 1
@@ -410,6 +369,53 @@ MonoBehaviour:
   deformationInput: {fileID: 0}
   output: {fileID: 0}
   deformationAmplitude: 0
+--- !u!114 &6940786810015637400
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04bf5014b4484b5ba71e1682c4f5399c, type: 3}
+  m_Name: Fill Color
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 456, y: -648}
+  folded: 0
+  ports:
+    keys:
+    - inputRaster
+    - output
+    values:
+    - _fieldName: inputRaster
+      _node: {fileID: 6940786810015637400}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: -6240837201335320975}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: output
+      _node: {fileID: 6940786810015637400}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: input
+        node: {fileID: 4710186832519472888}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  inputRaster: {fileID: 0}
+  output: {fileID: 0}
+  fillColor: {r: 0.68223, g: 0, b: 1, a: 1}
 --- !u!114 &8972927082550489544
 MonoBehaviour:
   m_ObjectHideFlags: 0

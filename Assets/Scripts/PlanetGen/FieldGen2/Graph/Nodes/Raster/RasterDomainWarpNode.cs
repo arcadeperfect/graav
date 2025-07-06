@@ -118,99 +118,82 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Raster
     }
 
     [Node.CreateNodeMenu("Raster/Domain Warp")]
-    public class RasterDomainWarpNode : BaseNode, IPlanetDataOutput
+    public class RasterDomainWarpNode : RasterModifierNode // Inherit from RasterModifierNode
     {
-        [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
-        public PlanetDataPort rasterInput;
+        // rasterInput and output ports are inherited from RasterModifierNode
 
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
+        [Tooltip("Noise values for X-axis displacement.")]
         public FloatPort warpNoiseX;
 
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
+        [Tooltip("Noise values for Y-axis displacement.")]
         public FloatPort warpNoiseY;
-
-        [Output(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
-        public PlanetDataPort output;
 
         [Header("Domain Warp Parameters")]
         [Range(0f, 50f)]
         [Tooltip("Strength of the domain warp displacement")]
         public float warpStrength = 10f;
 
-        public override object GetValue(NodePort port)
-        {
-            if (port?.fieldName == "output" || port == null)
-            {
-                return this;
-            }
-            return null;
-        }
+        // Implement the abstract methods from RasterModifierNode
 
-        public JobHandle SchedulePlanetData(JobHandle dependency, int textureSize,
-            TempBufferManager tempBuffers, ref RasterData outputBuffer)
+        protected override JobHandle ScheduleSpecificInputs(JobHandle currentDependency, int textureSize,
+            TempBufferManager tempBuffers, ref SpecificInputsBuffers specificInputBuffers)
         {
-            var rasterNode = GetInputValue<BaseNode>(nameof(rasterInput));
+            // Get input nodes for warp noise
             var noiseXNode = GetInputValue<BaseNode>(nameof(warpNoiseX));
             var noiseYNode = GetInputValue<BaseNode>(nameof(warpNoiseY));
-
-            if (!(rasterNode is IPlanetDataOutput rasterOutput))
-            {
-                Debug.LogError($"{GetType().Name}: No valid Raster input connected!");
-                return dependency;
-            }
 
             if (!(noiseXNode is IFloatOutput noiseXOutput))
             {
                 Debug.LogError($"{GetType().Name}: No valid X warp noise input connected!");
-                return dependency;
+                return currentDependency;
             }
 
             if (!(noiseYNode is IFloatOutput noiseYOutput))
             {
                 Debug.LogError($"{GetType().Name}: No valid Y warp noise input connected!");
-                return dependency;
+                return currentDependency;
             }
 
-            var context = GetContext();
+            // Create temp buffers for noise data and assign them to specificInputBuffers
+            specificInputBuffers.NoiseX = new NativeArray<float>(textureSize * textureSize, Allocator.TempJob);
+            specificInputBuffers.NoiseY = new NativeArray<float>(textureSize * textureSize, Allocator.TempJob);
+            
+            tempBuffers.FloatBuffers.Add(specificInputBuffers.NoiseX); // Add to temp buffers for disposal
+            tempBuffers.FloatBuffers.Add(specificInputBuffers.NoiseY); // Add to temp buffers for disposal
 
-            // Create temp buffer for input raster
-            var inputRasterBuffer = new RasterData(textureSize);
-            tempBuffers.AddPlanetData(inputRasterBuffer);
+            // Schedule noise generation jobs
+            JobHandle noiseXHandle = noiseXOutput.ScheduleFloat(currentDependency, textureSize, tempBuffers, ref specificInputBuffers.NoiseX);
+            JobHandle noiseYHandle = noiseYOutput.ScheduleFloat(currentDependency, textureSize, tempBuffers, ref specificInputBuffers.NoiseY);
 
-            // Create temp buffers for noise
-            var warpNoiseXBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
-            var warpNoiseYBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
-            tempBuffers.FloatBuffers.Add(warpNoiseXBuffer);
-            tempBuffers.FloatBuffers.Add(warpNoiseYBuffer);
+            // Combine noise dependencies
+            return JobHandle.CombineDependencies(noiseXHandle, noiseYHandle);
+        }
 
-            // Schedule input jobs
-            JobHandle rasterHandle = rasterOutput.SchedulePlanetData(dependency, textureSize, tempBuffers, ref inputRasterBuffer);
-            JobHandle noiseXHandle = noiseXOutput.ScheduleFloat(dependency, textureSize, tempBuffers, ref warpNoiseXBuffer);
-            JobHandle noiseYHandle = noiseYOutput.ScheduleFloat(dependency, textureSize, tempBuffers, ref warpNoiseYBuffer);
-
-            // Combine dependencies
-            JobHandle combinedHandle = JobHandle.CombineDependencies(rasterHandle, noiseXHandle, noiseYHandle);
-
+        protected override JobHandle ScheduleRasterModificationJob(JobHandle dependency, int textureSize,
+            TempBufferManager tempBuffers, RasterData inputRaster, ref SpecificInputsBuffers specificInputBuffers, ref RasterData outputRaster, EvaluationContext context)
+        {
             // Create and schedule the domain warp job
             var warpJob = new RasterDomainWarpJob
             {
-                InputScalar = inputRasterBuffer.Scalar,
-                InputAltitude = inputRasterBuffer.Altitude,
-                InputColor = inputRasterBuffer.Color,
-                InputAngle = inputRasterBuffer.Angle,
-                WarpNoiseX = warpNoiseXBuffer,
-                WarpNoiseY = warpNoiseYBuffer,
-                OutputScalar = outputBuffer.Scalar,
-                OutputAltitude = outputBuffer.Altitude,
-                OutputColor = outputBuffer.Color,
-                OutputAngle = outputBuffer.Angle,
+                InputScalar = inputRaster.Scalar,
+                InputAltitude = inputRaster.Altitude,
+                InputColor = inputRaster.Color,
+                InputAngle = inputRaster.Angle,
+                WarpNoiseX = specificInputBuffers.NoiseX, // Use buffers from specificInputBuffers
+                WarpNoiseY = specificInputBuffers.NoiseY, // Use buffers from specificInputBuffers
+                OutputScalar = outputRaster.Scalar,
+                OutputAltitude = outputRaster.Altitude,
+                OutputColor = outputRaster.Color,
+                OutputAngle = outputRaster.Angle,
                 textureSize = textureSize,
                 warpStrength = this.warpStrength,
                 globalContributionMask = context.hasGlobalMask ? context.globalContributionMask : default,
                 hasGlobalMask = context.hasGlobalMask
             };
 
-            return warpJob.Schedule(textureSize * textureSize, 64, combinedHandle);
+            return warpJob.Schedule(textureSize * textureSize, 64, dependency);
         }
     }
 }

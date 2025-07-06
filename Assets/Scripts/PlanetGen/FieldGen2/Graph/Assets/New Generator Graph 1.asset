@@ -156,9 +156,9 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   rasterInput: {fileID: 0}
+  output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  output: {fileID: 0}
   warpStrength: 10.24
 --- !u!114 &11400000
 MonoBehaviour:
