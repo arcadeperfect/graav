@@ -14,7 +14,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Outputs
     public struct NoiseVisualizerJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<float> noiseInput;
-        [WriteOnly] public PlanetData outputBuffer;
+        [WriteOnly] public RasterData outputBuffer;
         
         [ReadOnly] public int textureSize;
         [ReadOnly] public float colorBrightness;
@@ -104,7 +104,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Outputs
         }
 
         public JobHandle SchedulePlanetData(JobHandle dependency, int textureSize, 
-            TempBufferManager tempBuffers, ref PlanetData outputBuffer)
+            TempBufferManager tempBuffers, ref RasterData outputBuffer)
         {
             var noiseNode = GetInputValue<BaseNode>(nameof(noiseInput));
             

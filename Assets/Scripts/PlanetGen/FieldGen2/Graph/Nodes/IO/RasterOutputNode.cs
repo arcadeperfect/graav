@@ -8,8 +8,8 @@ using XNode;
 
 namespace PlanetGen.FieldGen2.Graph.Nodes.Outputs
 {
-    [Node.CreateNodeMenu("Output/Final Output")]
-    public class OutputNode : BaseNode, IPlanetDataOutput
+    [Node.CreateNodeMenu("IO/Raster Output")]
+    public class RasterOutputNode : BaseNode, IPlanetDataOutput
     {
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
         public PlanetDataPort input;
@@ -24,7 +24,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Outputs
         }
 
         public JobHandle SchedulePlanetData(JobHandle dependency, int textureSize, TempBufferManager tempBuffers,
-            ref PlanetData outputBuffer)
+            ref RasterData outputBuffer)
         {
             var inputNode = GetInputValue<BaseNode>(nameof(input));
             if(!(inputNode is IPlanetDataOutput planetDataOutput))

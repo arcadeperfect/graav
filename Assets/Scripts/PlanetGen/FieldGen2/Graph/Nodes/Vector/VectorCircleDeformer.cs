@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Nodes.Base;
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -11,10 +12,10 @@ using XNode;
 namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
 {
     [BurstCompile(CompileSynchronously = true)]
-   public struct VectorCircleDeformJob : IJobParallelFor
+    public struct VectorCircleDeformJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<float2> InputVertices;
-        [ReadOnly] public NativeArray<float> DeformationNoise; // This is now treated as a 2D texture map
+        [ReadOnly] public NativeArray<float> DeformationNoise; // 2D texture map
         [WriteOnly] public NativeArray<float2> OutputVertices;
 
         [ReadOnly] public int textureSize;
@@ -25,75 +26,82 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
         public void Execute(int index)
         {
             float2 inputVertex = InputVertices[index];
-            float angle = inputVertex.x;
-            float radius = inputVertex.y;
+            
+            // Convert Cartesian to polar for deformation calculation
+            float angle = math.atan2(inputVertex.y, inputVertex.x);
+            float radius = math.length(inputVertex);
 
-            // *** CHANGED: Sample deformation noise using bilinear filtering from the 2D map ***
-            float deformation = SampleDeformationNoiseBilinear(angle, radius, textureSize, DeformationNoise);
-            float deformedRadius = radius + (deformation * deformationAmplitude);
-            deformedRadius = math.clamp(deformedRadius, 0f, 1f);
-    
+            // Sample deformation noise using the Cartesian position
+            float deformation = SampleDeformationNoise(inputVertex, textureSize, DeformationNoise);
+            
+            // Apply deformation in the radial direction
+            float2 radialDirection = math.normalize(inputVertex);
+            float2 deformedPosition = inputVertex + (radialDirection * deformation * deformationAmplitude);
+            
             float contribution = 1.0f;
-    
+            
             if (hasGlobalMask && globalContributionMask.IsCreated)
             {
-                // *** CHANGED: Use bilinear filtering for global contribution mask ***
-                contribution = SampleGlobalMaskBilinear(angle, radius, textureSize, globalContributionMask);
+                contribution = SampleGlobalMask(inputVertex, textureSize, globalContributionMask);
             }
             
-            float finalRadius = math.lerp(radius, deformedRadius, contribution);
-    
-            OutputVertices[index] = new float2(angle, finalRadius);
+            // Blend between original and deformed position
+            float2 finalPosition = math.lerp(inputVertex, deformedPosition, contribution);
+            
+            OutputVertices[index] = finalPosition;
         }
         
-        // *** NEW/MODIFIED: Helper function for bilinear sampling of a 2D mask from polar coordinates ***
-        private float SampleGlobalMaskBilinear(float angle, float radius, int texSize, NativeArray<float> mask)
+        // Sample from 2D texture using Cartesian coordinates
+        private float SampleDeformationNoise(float2 position, int texSize, NativeArray<float> noiseMap)
         {
-            // Convert polar vertex position to texture UV coordinates [0, 1]
-            float x_cartesian = math.cos(angle) * radius;
-            float y_cartesian = math.sin(angle) * radius;
-            
-            float u = (x_cartesian + 1.0f) * 0.5f; // u in [0, 1]
-            float v = (y_cartesian + 1.0f) * 0.5f; // v in [0, 1]
+            // Convert world position to texture UV coordinates [0, 1]
+            // Assuming the texture represents a [-1, 1] world space
+            float u = (position.x + 1.0f) * 0.5f;
+            float v = (position.y + 1.0f) * 0.5f;
 
-            // Convert to pixel coordinates (float precision for interpolation)
+            return SampleTextureBilinear(u, v, texSize, noiseMap);
+        }
+        
+        private float SampleGlobalMask(float2 position, int texSize, NativeArray<float> mask)
+        {
+            // Same UV mapping as deformation noise
+            float u = (position.x + 1.0f) * 0.5f;
+            float v = (position.y + 1.0f) * 0.5f;
+
+            return SampleTextureBilinear(u, v, texSize, mask);
+        }
+        
+        // Bilinear sampling from 2D texture stored as 1D array
+        private float SampleTextureBilinear(float u, float v, int texSize, NativeArray<float> texture)
+        {
+            // Clamp UV to [0, 1]
+            u = math.saturate(u);
+            v = math.saturate(v);
+            
+            // Convert to pixel coordinates
             float pixelX = u * (texSize - 1);
             float pixelY = v * (texSize - 1);
 
-            // Get the integer coordinates of the top-left pixel for interpolation
+            // Get integer coordinates
             int x0 = (int)math.floor(pixelX);
             int y0 = (int)math.floor(pixelY);
-            int x1 = x0 + 1;
-            int y1 = y0 + 1;
+            int x1 = math.min(x0 + 1, texSize - 1);
+            int y1 = math.min(y0 + 1, texSize - 1);
 
-            // Get the fractional parts for lerping
+            // Get fractional parts
             float fx = pixelX - x0;
             float fy = pixelY - y0;
 
-            // Clamp coordinates to valid texture range
-            x0 = math.clamp(x0, 0, texSize - 1);
-            y0 = math.clamp(y0, 0, texSize - 1);
-            x1 = math.clamp(x1, 0, texSize - 1);
-            y1 = math.clamp(y1, 0, texSize - 1);
-
-            // Get values from the 1D NativeArray, treating it as 2D
-            float c00 = mask[y0 * texSize + x0];
-            float c10 = mask[y0 * texSize + x1];
-            float c01 = mask[y1 * texSize + x0];
-            float c11 = mask[y1 * texSize + x1];
+            // Sample the four corner pixels
+            float c00 = texture[y0 * texSize + x0];
+            float c10 = texture[y0 * texSize + x1];
+            float c01 = texture[y1 * texSize + x0];
+            float c11 = texture[y1 * texSize + x1];
 
             // Bilinear interpolation
             float c0 = math.lerp(c00, c10, fx);
             float c1 = math.lerp(c01, c11, fx);
             return math.lerp(c0, c1, fy);
-        }
-        
-        // *** NEW/MODIFIED: Renamed and adjusted to use bilinear for internal deformation noise ***
-        private float SampleDeformationNoiseBilinear(float angle, float radius, int texSize, NativeArray<float> noiseMap)
-        {
-            // This now simply reuses the bilinear sampling logic since DeformationNoise
-            // is now also treated as a 2D map.
-            return SampleGlobalMaskBilinear(angle, radius, texSize, noiseMap);
         }
     }
 

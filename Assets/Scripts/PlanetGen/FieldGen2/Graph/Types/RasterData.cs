@@ -3,14 +3,14 @@ using Unity.Mathematics;
 
 namespace PlanetGen.FieldGen2.Graph
 {
-    public struct PlanetData
+    public struct RasterData
     {
         public NativeArray<float> Scalar;
         public NativeArray<float> Altitude;
         public NativeArray<float4> Color;
         public NativeArray<float> Angle;
 
-        public PlanetData(int size, Allocator allocator = Allocator.Persistent)
+        public RasterData(int size, Allocator allocator = Allocator.Persistent)
         {
             size = size * size;
             Scalar = new NativeArray<float>(size, allocator);

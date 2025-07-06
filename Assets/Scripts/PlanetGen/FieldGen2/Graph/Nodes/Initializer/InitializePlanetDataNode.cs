@@ -13,7 +13,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Initializer
     [BurstCompile(CompileSynchronously = true)]
     public struct InitializePlanetDataJob : IJobParallelFor
     {
-        [WriteOnly] public PlanetData outputBuffer;
+        [WriteOnly] public RasterData outputBuffer;
         
         [ReadOnly] public int textureSize;
         [ReadOnly] public float globalContribution;
@@ -63,7 +63,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Initializer
         }
 
         public JobHandle SchedulePlanetData(JobHandle dependency, int textureSize,
-            TempBufferManager tempBuffers, ref PlanetData outputBuffer)
+            TempBufferManager tempBuffers, ref RasterData outputBuffer)
         {
             var context = GetContext();
             

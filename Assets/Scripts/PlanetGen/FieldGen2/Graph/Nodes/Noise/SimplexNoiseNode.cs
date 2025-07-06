@@ -63,7 +63,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Noise
         }
     }
 
-    [Node.CreateNodeMenu("Noise/FBM (Fractal Brownian Motion)")]
+    [Node.CreateNodeMenu("Noise/Simplex")]
     public class SimplexNoiseNode : NoiseGeneratorNode
     {
         [Header("FBM Parameters")] 

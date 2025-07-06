@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Nodes.Base;
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -24,68 +25,72 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
         public void Execute(int index)
         {
             float2 inputVertex = InputVertices[index];
-            float angle = inputVertex.x;
-            float radius = inputVertex.y;
-
-            float expandedRadius = radius + expansionAmount;
-            expandedRadius = math.clamp(expandedRadius, 0f, 1f);
+            
+            // Calculate expansion direction (radial outward from origin)
+            float2 direction = math.normalize(inputVertex);
+            
+            // If vertex is at origin, can't expand radially - skip it
+            if (math.length(inputVertex) < 1e-6f)
+            {
+                OutputVertices[index] = inputVertex;
+                return;
+            }
+            
+            // Calculate expanded position
+            float2 expandedVertex = inputVertex + (direction * expansionAmount);
             
             float contribution = 1.0f;
             
             if (hasGlobalMask && globalContributionMask.IsCreated)
             {
-                // *** CHANGED: Use bilinear filtering for smoother sampling ***
-                contribution = SampleGlobalMaskBilinear(angle, radius, textureSize, globalContributionMask);
+                contribution = SampleGlobalMask(inputVertex, textureSize, globalContributionMask);
             }
             
-            float finalRadius = math.lerp(radius, expandedRadius, contribution);
+            // Blend between original and expanded position
+            float2 finalVertex = math.lerp(inputVertex, expandedVertex, contribution);
             
-            OutputVertices[index] = new float2(angle, finalRadius);
+            OutputVertices[index] = finalVertex;
         }
         
-        // *** NEW/MODIFIED: Helper function for bilinear sampling of a 2D mask from polar coordinates ***
-        private float SampleGlobalMaskBilinear(float angle, float radius, int texSize, NativeArray<float> mask)
+        // Sample from 2D texture using Cartesian coordinates
+        private float SampleGlobalMask(float2 position, int texSize, NativeArray<float> mask)
         {
-            // Convert polar vertex position to texture UV coordinates [0, 1]
-            // Map from circle (radius 0-1) to square texture region
-            // (x,y) from [-1,1] to (uv) from [0,1]
-            float x_cartesian = math.cos(angle) * radius;
-            float y_cartesian = math.sin(angle) * radius;
-            
-            float u = (x_cartesian + 1.0f) * 0.5f; // u in [0, 1]
-            float v = (y_cartesian + 1.0f) * 0.5f; // v in [0, 1]
+            // Convert world position to texture UV coordinates [0, 1]
+            // Assuming the texture represents a [-1, 1] world space
+            float u = (position.x + 1.0f) * 0.5f;
+            float v = (position.y + 1.0f) * 0.5f;
 
-            // Convert to pixel coordinates (float precision for interpolation)
+            return SampleTextureBilinear(u, v, texSize, mask);
+        }
+        
+        // Bilinear sampling from 2D texture stored as 1D array
+        private float SampleTextureBilinear(float u, float v, int texSize, NativeArray<float> texture)
+        {
+            // Clamp UV to [0, 1]
+            u = math.saturate(u);
+            v = math.saturate(v);
+            
+            // Convert to pixel coordinates
             float pixelX = u * (texSize - 1);
             float pixelY = v * (texSize - 1);
 
-            // Get the integer coordinates of the top-left pixel for interpolation
+            // Get integer coordinates
             int x0 = (int)math.floor(pixelX);
             int y0 = (int)math.floor(pixelY);
-            int x1 = x0 + 1;
-            int y1 = y0 + 1;
+            int x1 = math.min(x0 + 1, texSize - 1);
+            int y1 = math.min(y0 + 1, texSize - 1);
 
-            // Get the fractional parts for lerping
+            // Get fractional parts
             float fx = pixelX - x0;
             float fy = pixelY - y0;
 
-            // Clamp coordinates to valid texture range to prevent out-of-bounds access
-            x0 = math.clamp(x0, 0, texSize - 1);
-            y0 = math.clamp(y0, 0, texSize - 1);
-            x1 = math.clamp(x1, 0, texSize - 1); // Clamp x1 to texSize - 1 for edge cases
-            y1 = math.clamp(y1, 0, texSize - 1); // Clamp y1 to texSize - 1 for edge cases
-            
-            // Handle edge case where x1 or y1 might go out of bounds if pixelX/Y is exactly texSize-1
-            // By clamping x1 and y1 as well, we ensure we always sample valid indices.
-            // If x0 = texSize-1, then x1 will also be texSize-1, effectively repeating the edge pixel.
+            // Sample the four corner pixels
+            float c00 = texture[y0 * texSize + x0];
+            float c10 = texture[y0 * texSize + x1];
+            float c01 = texture[y1 * texSize + x0];
+            float c11 = texture[y1 * texSize + x1];
 
-            // Get values from the 1D NativeArray, treating it as 2D
-            float c00 = mask[y0 * texSize + x0];
-            float c10 = mask[y0 * texSize + x1];
-            float c01 = mask[y1 * texSize + x0];
-            float c11 = mask[y1 * texSize + x1];
-
-            // Bilinear interpolation (linear interpolation in X, then in Y)
+            // Bilinear interpolation
             float c0 = math.lerp(c00, c10, fx);
             float c1 = math.lerp(c01, c11, fx);
             return math.lerp(c0, c1, fy);

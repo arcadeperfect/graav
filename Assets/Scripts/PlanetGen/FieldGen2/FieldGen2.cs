@@ -4,6 +4,8 @@ using System.Linq;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Nodes.Base;
 using PlanetGen.FieldGen2.Graph.Nodes.IO;
+using PlanetGen.FieldGen2.Graph.Nodes.Outputs;
+using PlanetGen.FieldGen2.Graph.Types;
 using Sirenix.OdinInspector;
 using Unity.Collections;
 using Unity.Jobs;
@@ -26,20 +28,23 @@ namespace PlanetGen.FieldGen2
         public float weightSeed = 0f; // Used for unique noise offset for this layer
 
         [NonSerialized] public NativeArray<float> weightMask;
-
+        public float seed;
         public bool IsValid => graph != null;
     }
 
     public class FieldGen2 : MonoBehaviour
     {
+        public static event Action<FieldGen2> OnVectorDataGenerated;
+        public static event Action<FieldGen2> OnPlanetDataGenerated;
+
         [Header("Sequential Vector Processing")] [ListDrawerSettings(ShowIndexLabels = true, DraggableItems = true)]
         public List<GraphLayer> graphLayers = new List<GraphLayer>();
 
         [Header("Initial Circle")] public int circleVertexCount = 64;
         public float circleRadius = 0.5f;
 
-        [Header("Dominance Mask Generation")] // Renamed header
-        public int textureSize = 512;
+        [Header("Dominance Mask Generation")] public int textureSize = 512;
+
 
         [Range(0.1f, 10f)] [Tooltip("Frequency of the noise patterns for dominance.")]
         public float dominanceNoiseFrequency = 2f;
@@ -50,6 +55,7 @@ namespace PlanetGen.FieldGen2
 
         public uint dominanceMasterSeed = 123;
 
+        [Header("Raster")] public int rasterSize = 512;
         [Header("Debug")] public bool drawDebugLines = true;
         public Color debugColor = Color.red;
         public float debugScale = 10f;
@@ -65,8 +71,10 @@ namespace PlanetGen.FieldGen2
             regenQueued = true;
         }
 
-        private VectorData currentResult;
-        private bool hasResult = false;
+        private VectorData currentVectorResult;
+        private RasterData currentRasterResult;
+        private bool hasVectorResult = false;
+        private bool hasRasterResult = false;
         private bool regenQueued = false;
         private bool maskRegenQueued = false;
 
@@ -76,6 +84,16 @@ namespace PlanetGen.FieldGen2
         private float _prevDominanceSharpness;
         private uint _prevDominanceMasterSeed;
         private List<GraphLayer> _prevGraphLayersSnapshot;
+
+        public RasterData currentRaster;
+        private bool hasRasterData = false;
+        private JobHandle rasterizeJobHandle;
+
+        public VectorData CurrentVectorVectorData => currentVectorResult;
+        public RasterData CurrentRaster => currentRaster;
+        public bool HasVectorVectorData => hasVectorResult;
+        public bool HasRasterData => hasRasterData;
+        public int CurrentRasterSize => rasterSize;
 
         void Start()
         {
@@ -116,9 +134,10 @@ namespace PlanetGen.FieldGen2
                 ProcessSequentialGraphs();
             }
 
-            if (continuousDebugDraw && drawDebugLines && hasResult && currentResult.IsValid && currentResult.Count > 1)
+            if (continuousDebugDraw && drawDebugLines && hasVectorResult && currentVectorResult.IsValid &&
+                currentVectorResult.Count > 1)
             {
-                DebugDrawVectorData(currentResult, debugColor, Time.deltaTime * 1.1f, Vector3.zero, debugScale);
+                DebugDrawVectorData(currentVectorResult, debugColor, Time.deltaTime * 1.1f, Vector3.zero, debugScale);
             }
         }
 
@@ -126,29 +145,42 @@ namespace PlanetGen.FieldGen2
         {
             if (graphLayers == null || graphLayers.Count == 0)
             {
-                // Debug.LogError("No graph layers configured");
-                return; 
+                Debug.LogError("No graph layers");
+                return;
             }
 
             if (maskRegenQueued)
             {
-                // Debug.Log("Regenerating Dominance-based weight masks...");
-                // WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
-                //     dominanceSharpness);
-                // maskRegenQueued = false;
                 WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
                     dominanceSharpness);
                 maskRegenQueued = false;
             }
 
-            if (hasResult && currentResult.IsValid)
+            // Complete any pending rasterization job before disposing old data
+            if (rasterizeJobHandle.IsCompleted == false)
             {
-                currentResult.Dispose();
+                rasterizeJobHandle.Complete();
             }
 
+            if (hasVectorResult && currentVectorResult.IsValid)
+            {
+                currentVectorResult.Dispose();
+            }
+
+            // Dispose old raster data
+            if (hasRasterData && currentRaster.Scalar.IsCreated)
+            {
+                currentRaster.Dispose();
+                hasRasterData = false;
+            }
+
+            // Generate an initial circle to seed the first graph with
             VectorData currentVector = VectorUtils.CreateCircle(circleRadius, circleVertexCount);
-            // Debug.Log(
-            //     $"Created initial circle: Valid={currentVector.IsValid}, Count={currentVector.Count}, Radius={circleRadius}");
+
+
+            ////////////////////////
+            // process vector stages
+            // /////////////////////
 
             try
             {
@@ -173,9 +205,9 @@ namespace PlanetGen.FieldGen2
                         graphLayers[i] = layer;
                     }
 
-                    // Debug.Log($"Processing layer {i}: {layer.graph.name}");
-
-                    VectorData layerResult = ProcessVectorGraph(layer.graph, currentVector, layer.weightMask);
+                    // Pass the output of each graph as input to the next
+                    VectorData layerResult =
+                        ProcessVectorGraph(layer.graph, currentVector, layer.weightMask, layer.seed);
 
                     if (i > 0)
                     {
@@ -185,10 +217,15 @@ namespace PlanetGen.FieldGen2
                     currentVector = layerResult;
                 }
 
-                currentResult = currentVector;
-                hasResult = true;
+                currentVectorResult = currentVector;
+                hasVectorResult = true;
+                OnVectorDataGenerated?.Invoke(this);
 
-                // Debug.Log($"Sequential processing complete. Final output vertices: {currentResult.Count}");
+
+                // Complete the job immediately so we can safely dispose the vector data
+                // rasterizeJobHandle.Complete();
+                // hasRasterData = true;
+                // OnPlanetDataGenerated?.Invoke(this);
             }
             catch (System.Exception e)
             {
@@ -198,30 +235,151 @@ namespace PlanetGen.FieldGen2
                     currentVector.Dispose();
                 }
             }
-        }
-        
-        public VectorData ProcessVectorGraph(GeneratorGraph graph, VectorData inputVector,
-            NativeArray<float> weightMask)
-        {
-            // Debug.Log($"ProcessVectorGraph - Input vector: Valid={inputVector.IsValid}, Count={inputVector.Count}");
 
+
+            ////////////////////////
+            // Process raster stages
+            ////////////////////////
+
+            // rasterize the final vector result
+            currentRaster = new RasterData(rasterSize, Allocator.Persistent);
+            rasterizeJobHandle =
+                VectorRasterizer.RasterizeVector(currentVectorResult, rasterSize, 1f, ref currentRaster);
+
+            rasterizeJobHandle.Complete();
+            hasRasterData = true;
+            
+            try
+            {
+                for (int i = 0; i < graphLayers.Count; i++)
+                {
+                    var layer = graphLayers[i];
+                    if (!layer.IsValid)
+                    {
+                        Debug.LogWarning($"Layer {i} has invalid graph, skipping");
+                        continue;
+                    }
+
+                    if (!layer.weightMask.IsCreated || layer.weightMask.Length != textureSize * textureSize)
+                    {
+                        Debug.LogWarning(
+                            $"Weight mask for layer {i} was not created or resized correctly. Forcing mask regeneration.");
+                        maskRegenQueued = true;
+                        if (layer.weightMask.IsCreated) layer.weightMask.Dispose();
+                        layer.weightMask = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
+                        float equalWeight = 1f / graphLayers.Count;
+                        for (int j = 0; j < layer.weightMask.Length; j++) layer.weightMask[j] = equalWeight;
+                        graphLayers[i] = layer;
+                    }
+
+                    // Pass the output of each graph as input to the next
+                    RasterData layerResult =
+                        ProcessRasterGraph(layer.graph, currentRaster, layer.weightMask, layer.seed);
+                    if (i > 0)
+                    {
+                        currentRaster.Dispose();
+                    }
+
+                    currentRaster = layerResult;
+                }
+                currentRasterResult = currentRaster;
+                hasRasterResult = true;
+                OnPlanetDataGenerated?.Invoke(this);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Error during raster processing: {e.Message}");
+                if (currentRaster.Scalar.IsCreated)
+                {
+                    currentRaster.Dispose();
+                }
+            }
+            // finally
+            // {
+            //     // Complete the rasterization job to ensure all data is ready
+            //     if (rasterizeJobHandle.IsCompleted == false)
+            //     {
+            //         rasterizeJobHandle.Complete();
+            //     }
+            //
+            //     hasRasterData = true;
+            // }
+        }
+
+        public RasterData ProcessRasterGraph(
+            GeneratorGraph graph,
+            RasterData inputRaster,
+            NativeArray<float> weightMask,
+            float seed)
+        {
             if (graph == null)
             {
                 Debug.LogError("Graph is null");
                 return default;
             }
 
-            var outputNode = graph.nodes.OfType<VectorOutputNode>().FirstOrDefault();
+            var outputNode =
+                graph.nodes.OfType<RasterOutputNode>().FirstOrDefault(); //todo there should be only one output node
             if (outputNode == null)
+            {
+                Debug.LogError("No RasterOutputNode found in graph");
+                return default;
+            }
+
+            graph.SetRasterInput(inputRaster);
+            graph.SetMaskInput(weightMask, textureSize);
+            graph.SetSeed(seed);
+
+            var outputRaster = new RasterData(rasterSize, Allocator.Persistent);
+            var tempBuffers = new TempBufferManager(true);
+
+            JobHandle rasterHandle = default;
+
+            try
+            {
+                rasterHandle = outputNode.SchedulePlanetData(new JobHandle(), rasterSize, tempBuffers,
+                    ref outputRaster);
+                rasterHandle.Complete();
+
+                return outputRaster;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Error during raster processing: {e.Message}");
+                if (rasterHandle.IsCompleted == false)
+                    rasterHandle.Complete();
+                return default;
+            }
+            finally
+            {
+                tempBuffers.DisposeAll();
+                graph.ClearExternalInputs();
+            }
+        }
+
+        public VectorData ProcessVectorGraph(
+            GeneratorGraph graph,
+            VectorData inputVector,
+            NativeArray<float> weightMask,
+            float seed)
+        {
+            if (graph == null)
+            {
+                Debug.LogError("Graph is null");
+                return default;
+            }
+
+            var vectorOutputNode = graph.nodes.OfType<VectorOutputNode>().FirstOrDefault();
+            if (vectorOutputNode == null)
             {
                 Debug.LogError("No VectorOutputNode found in graph");
                 return default;
             }
 
-            // Debug.Log("Found VectorOutputNode, setting inputs...");
-
             graph.SetVectorInput(inputVector);
             graph.SetMaskInput(weightMask, textureSize);
+            graph.SetSeed(seed);
+
 
             var outputVector = new VectorData(inputVector.Vertices.Length);
             var tempBuffers = new TempBufferManager(true);
@@ -231,7 +389,8 @@ namespace PlanetGen.FieldGen2
             try
             {
                 // Debug.Log("Scheduling vector processing...");
-                vectorHandle = outputNode.ScheduleVector(new JobHandle(), textureSize, tempBuffers, ref outputVector);
+                vectorHandle =
+                    vectorOutputNode.ScheduleVector(new JobHandle(), textureSize, tempBuffers, ref outputVector);
                 vectorHandle.Complete();
 
                 // Debug.Log($"Processing complete: Output Count={outputVector.Count}");
@@ -263,19 +422,23 @@ namespace PlanetGen.FieldGen2
             {
                 int nextIndex = (i + 1) % vectorData.Count;
 
+                // float2 current = vectorData.Vertices[i];
+                // Vector3 currentPos = center + new Vector3(
+                //     math.cos(current.x) * current.y * scale,
+                //     math.sin(current.x) * current.y * scale,
+                //     0f
+                // );
                 float2 current = vectorData.Vertices[i];
-                Vector3 currentPos = center + new Vector3(
-                    math.cos(current.x) * current.y * scale,
-                    math.sin(current.x) * current.y * scale,
-                    0f
-                );
+                Vector3 currentPos = center + new Vector3(current.x * scale, current.y * scale, 0f);
 
+                // float2 next = vectorData.Vertices[nextIndex];
+                // Vector3 nextPos = center + new Vector3(
+                //     math.cos(next.x) * next.y * scale,
+                //     math.sin(next.x) * next.y * scale,
+                //     0f
+                // );
                 float2 next = vectorData.Vertices[nextIndex];
-                Vector3 nextPos = center + new Vector3(
-                    math.cos(next.x) * next.y * scale,
-                    math.sin(next.x) * next.y * scale,
-                    0f
-                );
+                Vector3 nextPos = center + new Vector3(next.x * scale, next.y * scale, 0f);
 
                 Debug.DrawLine(currentPos, nextPos, color, duration);
             }
@@ -285,9 +448,20 @@ namespace PlanetGen.FieldGen2
         {
             BaseNode.OnAnyNodeChanged -= OnNodeParameterChanged;
 
-            if (hasResult && currentResult.IsValid)
+            // Complete any pending jobs
+            if (rasterizeJobHandle.IsCompleted == false)
             {
-                currentResult.Dispose();
+                rasterizeJobHandle.Complete();
+            }
+
+            if (hasVectorResult && currentVectorResult.IsValid)
+            {
+                currentVectorResult.Dispose();
+            }
+
+            if (hasRasterData && currentRaster.Scalar.IsCreated)
+            {
+                currentRaster.Dispose();
             }
 
             foreach (var layer in graphLayers)

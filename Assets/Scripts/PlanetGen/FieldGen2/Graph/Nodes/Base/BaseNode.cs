@@ -79,7 +79,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Base
     public interface IPlanetDataOutput
     {
         JobHandle SchedulePlanetData(JobHandle dependency, int textureSize,
-            TempBufferManager tempBuffers, ref PlanetData outputBuffer);
+            TempBufferManager tempBuffers, ref RasterData outputBuffer);
     }
 
     // Legacy interface for backward compatibility

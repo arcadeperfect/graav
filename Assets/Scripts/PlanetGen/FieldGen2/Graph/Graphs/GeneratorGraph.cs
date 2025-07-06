@@ -29,6 +29,7 @@
 //     }
 // }
 
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Collections;
 using UnityEngine;
 using XNode;
@@ -39,13 +40,15 @@ namespace PlanetGen.FieldGen2.Graph
     public class GeneratorGraph : NodeGraph
     {
         public float globalContribution = 1f;
-        public float seed = 0;
+        public float gobalSeed = 0;
 
         // External input data that can be injected into the graph
         private VectorData externalVectorInput;
+        private RasterData externalRasterInput;
         private NativeArray<float> externalMaskInput;
         private bool hasVectorInput = false;
         private bool hasMaskInput = false;
+        private bool hasRasterInput = false;
         private int currentTextureSize = 512;
 
         public EvaluationContext GetEvaluationContext()
@@ -53,7 +56,7 @@ namespace PlanetGen.FieldGen2.Graph
             return new EvaluationContext
             {
                 contribution = globalContribution,
-                seed = seed,
+                seed = gobalSeed,
                 globalContributionMask = hasMaskInput ? externalMaskInput : default,
                 hasGlobalMask = hasMaskInput,
                 textureSize = currentTextureSize
@@ -79,6 +82,17 @@ namespace PlanetGen.FieldGen2.Graph
             currentTextureSize = textureSize;
         }
 
+        public void SetRasterInput(RasterData rasterData)
+        {
+            externalRasterInput = rasterData;
+            hasRasterInput = true;
+        }
+        
+        public void SetSeed(float seed)
+        {
+            this.gobalSeed = seed;
+        }
+
         /// <summary>
         /// Get the external VectorData if available
         /// </summary>
@@ -86,6 +100,12 @@ namespace PlanetGen.FieldGen2.Graph
         {
             vectorData = externalVectorInput;
             return hasVectorInput;
+        }
+        
+        public bool TryGetRasterInput(out RasterData rasterData)
+        {
+            rasterData = externalRasterInput;
+            return hasRasterInput;
         }
 
         /// <summary>
@@ -104,6 +124,7 @@ namespace PlanetGen.FieldGen2.Graph
         {
             hasVectorInput = false;
             hasMaskInput = false;
+            hasRasterInput = false;
             // Note: Don't dispose the arrays here - they're owned by the orchestrator
         }
 

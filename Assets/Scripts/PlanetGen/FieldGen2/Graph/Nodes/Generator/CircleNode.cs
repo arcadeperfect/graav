@@ -13,9 +13,9 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
     [BurstCompile(CompileSynchronously = true)]
     public struct CircleJob : IJobParallelFor
     {
-        [ReadOnly] public PlanetData InputPlanetData;
+        [ReadOnly] public RasterData InputRasterData;
         [ReadOnly] public NativeArray<float> DeformationNoise;
-        [WriteOnly] public PlanetData Output;
+        [WriteOnly] public RasterData Output;
 
         [ReadOnly] public int textureSize;
         [ReadOnly] public float radius;
@@ -24,15 +24,15 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
         public void Execute(int index)
         {
             // Bounds checking
-            if (index >= InputPlanetData.Altitude.Length || index >= DeformationNoise.Length ||
+            if (index >= InputRasterData.Altitude.Length || index >= DeformationNoise.Length ||
                 index >= Output.Altitude.Length)
             {
                 return;
             }
 
             // Get pre-calculated values from input PlanetData
-            float altitude = InputPlanetData.Altitude[index]; // This is now distance from center normalized
-            float angle = InputPlanetData.Angle[index]; // Angle in radians [-π, π]
+            float altitude = InputRasterData.Altitude[index]; // This is now distance from center normalized
+            float angle = InputRasterData.Angle[index]; // Angle in radians [-π, π]
 
             // Sample noise in circular space to avoid seams
             // Convert polar coordinates (angle, radius) to Cartesian for noise sampling
@@ -66,8 +66,8 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
             }
 
             // Copy input data and set the scalar value
-            Output.Altitude[index] = InputPlanetData.Altitude[index];
-            Output.Angle[index] = InputPlanetData.Angle[index];
+            Output.Altitude[index] = InputRasterData.Altitude[index];
+            Output.Angle[index] = InputRasterData.Angle[index];
             Output.Scalar[index] = circleValue;
             Output.Color[index] = new float4(circleValue, circleValue, circleValue, 1.0f);
         }
@@ -98,7 +98,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
         }
 
         public JobHandle SchedulePlanetData(JobHandle dependency, int textureSize,
-            TempBufferManager tempBuffers, ref PlanetData outputBuffer)
+            TempBufferManager tempBuffers, ref RasterData outputBuffer)
         {
             var planetDataNode = GetInputValue<BaseNode>(nameof(planetDataInput));
             var deformationNode = GetInputValue<BaseNode>(nameof(deformationInput));
@@ -116,7 +116,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
             }
 
             // Create temp buffer for planet data input
-            var inputPlanetData = new PlanetData(textureSize);
+            var inputPlanetData = new RasterData(textureSize);
             tempBuffers.AddPlanetData(inputPlanetData);
 
             // Schedule the planet data input
@@ -132,7 +132,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Generator
             // Create and schedule the circle job
             var circleJob = new CircleJob
             {
-                InputPlanetData = inputPlanetData,
+                InputRasterData = inputPlanetData,
                 DeformationNoise = noiseBuffer,
                 Output = outputBuffer,
                 textureSize = textureSize,

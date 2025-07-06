@@ -62,6 +62,7 @@
 //     
 // }
 
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;

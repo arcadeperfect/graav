@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -33,12 +34,12 @@ namespace PlanetGen.FieldGen2.Graph
         }
         
         // Convenience methods for adding PlanetData buffers
-        public void AddPlanetData(PlanetData planetData)
+        public void AddPlanetData(RasterData rasterData)
         {
-            FloatBuffers.Add(planetData.Scalar);
-            FloatBuffers.Add(planetData.Altitude);
-            FloatBuffers.Add(planetData.Angle);
-            Float4Buffers.Add(planetData.Color);
+            FloatBuffers.Add(rasterData.Scalar);
+            FloatBuffers.Add(rasterData.Altitude);
+            FloatBuffers.Add(rasterData.Angle);
+            Float4Buffers.Add(rasterData.Color);
         }
         
         // Convenience method for adding VectorData buffers

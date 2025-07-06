@@ -1,3 +1,4 @@
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Jobs;
 using UnityEngine;
 using XNode;
