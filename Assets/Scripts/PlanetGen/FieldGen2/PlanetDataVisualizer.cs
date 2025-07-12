@@ -13,7 +13,7 @@ namespace PlanetGen.FieldGen2
     public class PlanetDataVisualizer : MonoBehaviour
     {
         [Header("Source")]
-        public FieldGen2 fieldGen;
+        private FieldGen2 fieldGen;
         
         [Header("Visualization")]
         public VisualizationMode visualizationMode = VisualizationMode.Color;
@@ -25,6 +25,8 @@ namespace PlanetGen.FieldGen2
 
         void Start()
         {
+            fieldGen = GetComponent<FieldGen2>();
+            
             // Auto-find FieldGen2 if not assigned
             if (fieldGen == null)
             {
