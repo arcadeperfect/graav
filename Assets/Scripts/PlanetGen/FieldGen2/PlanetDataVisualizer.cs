@@ -91,7 +91,8 @@ namespace PlanetGen.FieldGen2
 
             // Create new visualization
             currentTexture = PlanetDataVisualizerUtils.CreateTexture(
-                fieldGen.CurrentRaster, 
+                // fieldGen.CurrentRaster, 
+                fieldGen.FieldData.RasterData, 
                 fieldGen.CurrentRasterSize, 
                 visualizationMode
             );
