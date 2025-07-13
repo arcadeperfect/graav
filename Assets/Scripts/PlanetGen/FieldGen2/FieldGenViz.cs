@@ -10,7 +10,7 @@ namespace PlanetGen.FieldGen2
     // public bool HasPlanetData => hasPlanetData;
     // public int CurrentRasterSize => rasterSize;
 
-    public class PlanetDataVisualizer : MonoBehaviour
+    public class FieldGenViz : MonoBehaviour
     {
         [Header("Source")]
         private FieldGen2 fieldGen;

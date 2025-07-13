@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using PlanetGen.FieldGen;
+using PlanetGen.FieldGen2.Types;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -24,7 +26,7 @@ namespace PlanetGen.Compute
         /// <param name="fieldData">The input field data containing scalar values and colors.</param>
         /// <param name="isoValue">The threshold value to generate the iso-surface contour.</param>
         /// <returns>A tuple containing a list of segment positions (Vector4) and a list of segment colors (two per segment).</returns>
-        public static (List<Vector4> segments, List<SegmentColor> segmentColors) GenerateSegments(FieldGen.FieldGen.FieldData fieldData, float isoValue)
+        public static (List<Vector4> segments, List<SegmentColor> segmentColors) GenerateSegments(FieldData2 fieldData, float isoValue)
         {
             var segments = new List<Vector4>();
             var segmentColors = new List<SegmentColor>();
@@ -36,17 +38,28 @@ namespace PlanetGen.Compute
                 for (int y = 0; y < height - 1; y++)
                 {
                     // Sample the scalar values at the four corners of the cell.
-                    float v00 = fieldData.GetScalarValue(x, y);         // bottom-left
-                    float v10 = fieldData.GetScalarValue(x + 1, y);     // bottom-right
-                    float v11 = fieldData.GetScalarValue(x + 1, y + 1); // top-right
-                    float v01 = fieldData.GetScalarValue(x, y + 1);     // top-left
+                    // float v00 = fieldData.GetScalarValue(x, y);         // bottom-left
+                    // float v10 = fieldData.GetScalarValue(x + 1, y);     // bottom-right
+                    // float v11 = fieldData.GetScalarValue(x + 1, y + 1); // top-right
+                    // float v01 = fieldData.GetScalarValue(x, y + 1);     // top-left
 
+                    float v00 = fieldData.RasterData.GetScalarAt(x, y);
+                    float v10 = fieldData.RasterData.GetScalarAt(x + 1, y);
+                    float v11 = fieldData.RasterData.GetScalarAt(x + 1, y + 1);
+                    float v01 = fieldData.RasterData.GetScalarAt(x, y + 1)
+;
                     // Sample the colors at the four corners of the cell.
-                    float4 c00_f4 = fieldData.GetColorValue(x, y);
-                    float4 c10_f4 = fieldData.GetColorValue(x + 1, y);
-                    float4 c11_f4 = fieldData.GetColorValue(x + 1, y + 1);
-                    float4 c01_f4 = fieldData.GetColorValue(x, y + 1);
-
+                    // float4 c00_f4 = fieldData.GetColorValue(x, y);
+                    // float4 c10_f4 = fieldData.GetColorValue(x + 1, y);
+                    // float4 c11_f4 = fieldData.GetColorValue(x + 1, y + 1);
+                    // float4 c01_f4 = fieldData.GetColorValue(x, y + 1);
+                    
+                    float4 c00_f4 = fieldData.RasterData.GetColorAt(x, y);
+                    float4 c10_f4 = fieldData.RasterData.GetColorAt(x + 1, y);
+                    float4 c11_f4 = fieldData.RasterData.GetColorAt(x + 1, y + 1);
+                    float4 c01_f4 = fieldData.RasterData.GetColorAt(x, y + 1);
+                    
+                    
                     Color c00 = new Color(c00_f4.x, c00_f4.y, c00_f4.z, c00_f4.w);
                     Color c10 = new Color(c10_f4.x, c10_f4.y, c10_f4.z, c10_f4.w);
                     Color c11 = new Color(c11_f4.x, c11_f4.y, c11_f4.z, c11_f4.w);

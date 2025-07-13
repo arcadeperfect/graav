@@ -139,7 +139,8 @@ namespace PlanetGen
             // Create brush job
             var brushJob = new SimpleBrushJob
             {
-                FieldData = fieldData.ScalarFieldArray,
+                // FieldData = fieldData.ScalarFieldArray,
+                FieldData = fieldData.RasterData.Scalar,
                 Width = fieldData.Width,
                 BrushCenter = texturePos,
                 BrushRadius = brushRadius * fieldData.Width * 0.5f, // Convert to texture space

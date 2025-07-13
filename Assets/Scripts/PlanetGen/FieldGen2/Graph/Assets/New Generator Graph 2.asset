@@ -134,8 +134,8 @@ MonoBehaviour:
   - {fileID: -7063200831616992041}
   - {fileID: 1277561118898541402}
   - {fileID: 8972927082550489544}
-  - {fileID: 6776538594016993990}
   - {fileID: 6940786810015637400}
+  - {fileID: 6776538594016993990}
   globalContribution: 1
   gobalSeed: 0
 --- !u!114 &1277561118898541402
@@ -200,8 +200,8 @@ MonoBehaviour:
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
-      - fieldName: vectorInput
-        node: {fileID: 6776538594016993990}
+      - fieldName: input
+        node: {fileID: 4471998844192389230}
         reroutePoints: []
       _direction: 1
       _connectionType: 1
@@ -234,7 +234,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
-        node: {fileID: 6776538594016993990}
+        node: {fileID: 2104905435081346368}
         reroutePoints: []
       _direction: 0
       _connectionType: 1
@@ -439,10 +439,7 @@ MonoBehaviour:
       _node: {fileID: 8972927082550489544}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections:
-      - fieldName: deformationInput
-        node: {fileID: 6776538594016993990}
-        reroutePoints: []
+      connections: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2

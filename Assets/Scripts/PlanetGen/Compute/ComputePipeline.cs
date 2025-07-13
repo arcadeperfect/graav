@@ -274,6 +274,7 @@
 // }
 
 using System;
+using PlanetGen.FieldGen2.Types;
 using UnityEngine;
 
 namespace PlanetGen.Compute
@@ -411,7 +412,7 @@ namespace PlanetGen.Compute
             sdfDomainWarpPingPong.Init(textureResolution);
         }
 
-        public void Dispatch(FieldGen.FieldGen.FieldData textures, int gridResolution)
+        public void Dispatch(FieldData2 textures, int gridResolution)
         {
             if (SegmentsBuffer == null) return;
 
@@ -419,6 +420,7 @@ namespace PlanetGen.Compute
             GenerateSegments(textures);
 
             // STEP 2: Generate SDF from original field texture
+            // GenerateSignedDistanceField(textures.ScalarFieldTexture);
             GenerateSignedDistanceField(textures.ScalarFieldTexture);
 
             // STEP 3: Apply domain warp to SDF for bands
@@ -432,7 +434,7 @@ namespace PlanetGen.Compute
         /// Generate line segments from the original scalar field using marching squares
         /// </summary>
         /// <param name="textures"></param>
-        void GenerateSegments(FieldGen.FieldGen.FieldData textures)
+        void GenerateSegments(FieldData2 textures)
         {
             var msShader = MarchingSquaresShader;
 

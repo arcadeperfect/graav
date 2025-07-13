@@ -84,7 +84,7 @@ MonoBehaviour:
       _dynamic: 0
   vectorInput: {fileID: 0}
   output: {fileID: 0}
-  expansionAmount: -0.21
+  expansionAmount: -0.02
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -159,7 +159,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 0
+  warpStrength: 50
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Nodes.Base;
 using PlanetGen.FieldGen2.Graph.Nodes.IO;
@@ -24,37 +26,56 @@ namespace PlanetGen.FieldGen2
         [Required] public GeneratorGraph graph;
 
         [Range(0f, 1f)] [Tooltip("Base weight for this layer's influence")]
+        // [TriggerMaskRegen]
         public float baseWeight = 1f;
 
         [Range(0f, 1000f)] [Tooltip("Random seed for this layer's weight distribution")]
+        // [TriggerMaskRegen]
         public float weightSeed = 0f; // Used for unique noise offset for this layer
 
         [NonSerialized] public NativeArray<float> weightMask;
+        // [TriggerMaskRegen]
         public float seed;
         public bool IsValid => graph != null;
     }
 
     public class FieldGen2 : MonoBehaviour
     {
+        #region Events
+
         public static event Action<FieldGen2> OnVectorDataGenerated;
         public static event Action<FieldGen2> OnPlanetDataGenerated;
 
-        [Header("Sequential Vector Processing")] [ListDrawerSettings(ShowIndexLabels = true, DraggableItems = true)]
-        public List<GraphLayer> graphLayers = new List<GraphLayer>();
+        #endregion
 
-        [Header("Initial Circle")] public int circleVertexCount = 64;
+        #region Inspector parameters
+
+        // public bool RemoteMode;
+        //
+        [Header("Sequential Vector Processing")] [ListDrawerSettings(ShowIndexLabels = true, DraggableItems = true)]
+        [TriggerMaskRegen]
+        public List<GraphLayer> graphLayers = new();
+
+        [Header("Initial Circle")] 
+        [TriggerFieldRegen]
+        public int circleVertexCount = 64;
+        [TriggerFieldRegen]
         public float circleRadius = 0.5f;
 
-        [Header("Dominance Mask Generation")] public int textureSize = 512;
+        [Header("Dominance Mask Generation")] 
+        [TriggerFieldRegen][TriggerMaskRegen]
+        public int textureSize = 512;
 
 
         [Range(0.1f, 10f)] [Tooltip("Frequency of the noise patterns for dominance.")]
+        [TriggerMaskRegen]
         public float dominanceNoiseFrequency = 2f;
 
         [Range(1f, 100f)]
         [Tooltip("How sharply influence drops off for non-dominant graphs. Higher = more distinct regions.")]
+        [TriggerMaskRegen]
         public float dominanceSharpness = 20f;
-
+        [TriggerMaskRegen]
         public uint dominanceMasterSeed = 123;
 
         // [Header("Raster")] public int textureSize = 512;
@@ -64,21 +85,28 @@ namespace PlanetGen.FieldGen2
         public bool continuousDebugDraw = true;
 
         [Button("Force Evaluation", ButtonSizes.Large)]
-        public void ForceEvaluation() => ProcessSequentialGraphs();
+        // public void ForceEvaluation() => ProcessSequentialGraphs();
+        public void ForceEvaluation() => QueueRegeneration(Because.ManualRegeneration);
+
 
         [Button("Regenerate Weights", ButtonSizes.Medium)]
         public void RegenerateWeights()
         {
             maskRegenQueued = true;
-            regenQueued = true;
+            QueueRegeneration(Because.MaskRegeneration);
         }
 
+        #endregion
+
+        #region Private members
+
+        private ParameterWatcher paramWatcher;
         private VectorData currentVectorResult;
 
         // private RasterData currentRasterResult;
         private bool hasVectorResult = false;
         private bool hasRasterResult = false;
-        private bool regenQueued = false;
+        // private bool regenQueued = false;
         private bool maskRegenQueued = false;
 
         // Previous values to detect changes in OnValidate for mask regeneration
@@ -88,66 +116,206 @@ namespace PlanetGen.FieldGen2
         private uint _prevDominanceMasterSeed;
         private List<GraphLayer> _prevGraphLayersSnapshot;
 
-        public RasterData currentRaster;
+        private RasterData currentRaster;
         private bool hasRasterData = false;
         private JobHandle rasterizeJobHandle;
 
-        // public VectorData CurrentVectorVectorData => currentVectorResult;
-        // public RasterData CurrentRaster => currentRaster;
+        #endregion
+
+        #region Public properties
+
         public bool HasVectorVectorData => hasVectorResult;
         public bool HasRasterData => hasRasterData;
         public int CurrentRasterSize => textureSize;
 
         public FieldData2 FieldData;
 
+        #endregion
+        
+        #region Update Queue
+
+        public enum Because
+        {
+            NodeParameterChanged,
+            ValidationTriggered,
+            ManualRegeneration,
+            MaskRegeneration,
+            ExternalProcess
+        }
+
+        private struct UpdateRequest
+        {
+            public Because reason;
+            public string caller;
+            public string sourceFile;
+            public int sourceLine;
+        }
+
+        private UpdateRequest? queuedUpdate;
+
+        void QueueRegeneration(Because reason, 
+            [CallerMemberName] string caller = "",
+            [CallerFilePath] string sourceFile = "",
+            [CallerLineNumber] int sourceLine = 0)
+        {
+            queuedUpdate = new UpdateRequest 
+            { 
+                reason = reason, 
+                caller = caller,
+                sourceFile = Path.GetFileName(sourceFile),
+                sourceLine = sourceLine
+            };
+        }
+
+        #endregion
+
+
+        #region Unity Lifecycle
+
         void Start()
         {
             BaseNode.OnAnyNodeChanged += OnNodeParameterChanged;
-            maskRegenQueued = true;
-            regenQueued = true;
-            TakeSnapshotOfParameters();
-        }
+            paramWatcher = new ParameterWatcher(this);
 
+            // if (GetComponent<PlanetGenMain>() != null)
+            //     RemoteMode = true;
+            //
+            // if(RemoteMode)
+            //     maskRegenQueued = false;
+            // else
+            //     maskRegenQueued = true;
+            maskRegenQueued = true;
+        }
+        
         private void OnValidate()
         {
+            // if (RemoteMode)
+            //     return;
+            
             if (dominanceNoiseFrequency <= 0) dominanceNoiseFrequency = 0.1f;
             if (dominanceSharpness <= 0) dominanceSharpness = 1f;
-
-            if (textureSize != _prevTextureSize ||
-                !Mathf.Approximately(dominanceNoiseFrequency, _prevDominanceNoiseFrequency) ||
-                !Mathf.Approximately(dominanceSharpness, _prevDominanceSharpness) ||
-                dominanceMasterSeed != _prevDominanceMasterSeed ||
-                HasGraphLayerParametersChanged())
-            {
-                maskRegenQueued = true;
-            }
-
-            regenQueued = true;
-            TakeSnapshotOfParameters();
+            maskRegenQueued = true;
+            QueueRegeneration(Because.ValidationTriggered); //TODO: implement change detection that supports the nested class
         }
-
-        void OnNodeParameterChanged()
-        {
-            regenQueued = true;
-        }
-
+        
         void Update()
         {
-            if (regenQueued)
+            // if (paramWatcher != null)
+            // {
+            //     var changes = paramWatcher.CheckForChanges();
+            //     
+            //     if (changes.HasMaskRegen())
+            //     {
+            //         print("mask");
+            //         maskRegenQueued = true;
+            //         QueueRegeneration(UpdateReason.MaskRegeneration);
+            //     }
+            //     else if (changes.HasFieldRegen())
+            //     {
+            //         print("field");
+            //         QueueRegeneration(UpdateReason.ValidationTriggered);
+            //     }
+            // }
+            // else
+            // {
+            //     throw new Exception("ParameterWatcher is null");
+            // }
+
+            if (maskRegenQueued)
             {
-                regenQueued = false;
+                RegenerateWeights();
+                QueueRegeneration(Because.MaskRegeneration);
+            }
+            
+            if (queuedUpdate.HasValue)
+            {
+                var update = queuedUpdate.Value;
+                Debug.Log($"Processing graphs due to: {update.reason} " +
+                          $"(called by {update.caller} in {update.sourceFile}:{update.sourceLine})");
+                queuedUpdate = null;
                 ProcessSequentialGraphs();
             }
-
+            
             if (continuousDebugDraw && drawDebugLines && hasVectorResult && currentVectorResult.IsValid &&
                 currentVectorResult.Count > 1)
             {
                 DebugDrawVectorData(currentVectorResult, debugColor, Time.deltaTime * 1.1f, Vector3.zero, debugScale);
             }
         }
-
-        public void ProcessSequentialGraphs()
+        void OnDestroy()
         {
+            BaseNode.OnAnyNodeChanged -= OnNodeParameterChanged;
+
+            // Complete any pending jobs
+            if (rasterizeJobHandle.IsCompleted == false)
+            {
+                rasterizeJobHandle.Complete();
+            }
+
+            if (hasVectorResult && currentVectorResult.IsValid)
+            {
+                currentVectorResult.Dispose();
+            }
+
+            if (hasRasterData && currentRaster.Scalar.IsCreated)
+            {
+                currentRaster.Dispose();
+            }
+
+            foreach (var layer in graphLayers)
+            {
+                if (layer.weightMask.IsCreated)
+                {
+                    layer.weightMask.Dispose();
+                }
+            }
+        }
+
+        #endregion
+
+        #region API
+
+        private void OnNodeParameterChanged()
+        {
+            // regenQueued = true;
+            QueueRegeneration(Because.NodeParameterChanged);
+
+        }
+        // void OnNodeParameterChanged() => QueueRegeneration(UpdateReason.NodeParameterChanged);
+        public FieldData2 ExternalProcess(float seed)
+        {
+            // TODO: implement seed
+            // QueueRegeneration(Because.ExternalProcess);
+            GenerateFieldSynchronous();
+            return FieldData;
+        }
+
+        #endregion
+
+        #region Internal Methods
+        public void GenerateFieldSynchronous(bool forceMaskRegen = false)
+        {
+            // Ensure any pending async job is completed before we start a new synchronous one
+            if (rasterizeJobHandle.IsCompleted == false)
+            {
+                rasterizeJobHandle.Complete();
+            }
+
+            if (forceMaskRegen || maskRegenQueued)
+            {
+                // Force mask regeneration if needed
+                WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
+                    dominanceSharpness);
+                maskRegenQueued = false; // Reset the flag after synchronous generation
+            }
+
+            // Directly call the processing logic
+            ProcessSequentialGraphs(); // Renamed ProcessSequentialGraphs to avoid confusion and make it clear it's an internal helper
+            
+        }
+        private void ProcessSequentialGraphs()
+        {
+            // print("Processing sequential graphs");
             if (graphLayers == null || graphLayers.Count == 0)
             {
                 Debug.LogError("No graph layers");
@@ -232,7 +400,7 @@ namespace PlanetGen.FieldGen2
                 hasVectorResult = true;
                 OnVectorDataGenerated?.Invoke(this);
             }
-            catch (System.Exception e)
+            catch (Exception e)
             {
                 Debug.LogError($"Error during sequential processing: {e.Message}");
                 if (currentVector.IsValid)
@@ -302,7 +470,7 @@ namespace PlanetGen.FieldGen2
                 OnPlanetDataGenerated?.Invoke(this);
             }
 
-            catch (System.Exception e)
+            catch (Exception e)
             {
                 Debug.LogError($"Error during raster processing: {e.Message}");
                 if (currentRaster.Scalar.IsCreated)
@@ -312,7 +480,7 @@ namespace PlanetGen.FieldGen2
             }
         }
 
-        public RasterData ProcessRasterGraph(
+        private RasterData ProcessRasterGraph(
             GeneratorGraph graph,
             RasterData inputRaster,
             NativeArray<float> weightMask,
@@ -356,7 +524,7 @@ namespace PlanetGen.FieldGen2
 
                 return outputRaster;
             }
-            catch (System.Exception e)
+            catch (Exception e)
             {
                 Debug.LogError($"Error during raster processing: {e.Message}");
                 if (rasterHandle.IsCompleted == false)
@@ -370,7 +538,7 @@ namespace PlanetGen.FieldGen2
             }
         }
 
-        public VectorData ProcessVectorGraph(
+        private VectorData ProcessVectorGraph(
             GeneratorGraph graph,
             VectorData inputVector,
             NativeArray<float> weightMask,
@@ -413,7 +581,7 @@ namespace PlanetGen.FieldGen2
 
                 return outputVector;
             }
-            catch (System.Exception e)
+            catch (Exception e)
             {
                 Debug.LogError($"Error during vector processing: {e.Message}");
                 if (vectorHandle.IsCompleted == false)
@@ -427,7 +595,7 @@ namespace PlanetGen.FieldGen2
             }
         }
 
-        public void DebugDrawVectorData(VectorData vectorData, Color color, float duration = 1f,
+        private void DebugDrawVectorData(VectorData vectorData, Color color, float duration = 1f,
             Vector3 center = default, float scale = 1f)
         {
             if (!vectorData.IsValid || vectorData.Count < 2)
@@ -448,73 +616,9 @@ namespace PlanetGen.FieldGen2
                 Debug.DrawLine(currentPos, nextPos, color, duration);
             }
         }
+        
 
-        void OnDestroy()
-        {
-            BaseNode.OnAnyNodeChanged -= OnNodeParameterChanged;
+        #endregion
 
-            // Complete any pending jobs
-            if (rasterizeJobHandle.IsCompleted == false)
-            {
-                rasterizeJobHandle.Complete();
-            }
-
-            if (hasVectorResult && currentVectorResult.IsValid)
-            {
-                currentVectorResult.Dispose();
-            }
-
-            if (hasRasterData && currentRaster.Scalar.IsCreated)
-            {
-                currentRaster.Dispose();
-            }
-
-            foreach (var layer in graphLayers)
-            {
-                if (layer.weightMask.IsCreated)
-                {
-                    layer.weightMask.Dispose();
-                }
-            }
-        }
-
-        private void TakeSnapshotOfParameters()
-        {
-            _prevTextureSize = textureSize;
-            _prevDominanceNoiseFrequency = dominanceNoiseFrequency;
-            _prevDominanceSharpness = dominanceSharpness;
-            _prevDominanceMasterSeed = dominanceMasterSeed;
-
-            _prevGraphLayersSnapshot = new List<GraphLayer>(graphLayers.Count);
-            foreach (var layer in graphLayers)
-            {
-                _prevGraphLayersSnapshot.Add(new GraphLayer
-                {
-                    graph = layer.graph,
-                    baseWeight = layer.baseWeight,
-                    weightSeed = layer.weightSeed
-                });
-            }
-        }
-
-        private bool HasGraphLayerParametersChanged()
-        {
-            if (_prevGraphLayersSnapshot == null || graphLayers.Count != _prevGraphLayersSnapshot.Count)
-            {
-                return true;
-            }
-
-            for (int i = 0; i < graphLayers.Count; i++)
-            {
-                if (graphLayers[i].graph != _prevGraphLayersSnapshot[i].graph ||
-                    !Mathf.Approximately(graphLayers[i].baseWeight, _prevGraphLayersSnapshot[i].baseWeight) ||
-                    !Mathf.Approximately(graphLayers[i].weightSeed, _prevGraphLayersSnapshot[i].weightSeed))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
     }
 }
