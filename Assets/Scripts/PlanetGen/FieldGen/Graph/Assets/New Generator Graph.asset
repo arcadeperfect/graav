@@ -139,7 +139,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 1.76
+  deformationAmplitude: -0.05
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0

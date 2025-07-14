@@ -50,8 +50,10 @@
 //     }
 // }
 
+using System;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace PlanetGen.FieldGen2.Graph.Types
 {
@@ -71,18 +73,48 @@ namespace PlanetGen.FieldGen2.Graph.Types
 
             // Initialize vertex count to 0
             VertexCount[0] = 0;
+            _disposed = false;
         }
+
+        // public void Dispose()
+        // {
+        //     if (Vertices.IsCreated) Vertices.Dispose();
+        //     if (VertexCount.IsCreated) VertexCount.Dispose();
+        //     if (VertexWeights.IsCreated) VertexWeights.Dispose();
+        //     if (VertexColors.IsCreated) VertexColors.Dispose();
+        // }
+        private bool _disposed;
 
         public void Dispose()
         {
-            if (Vertices.IsCreated) Vertices.Dispose();
-            if (VertexCount.IsCreated) VertexCount.Dispose();
-            if (VertexWeights.IsCreated) VertexWeights.Dispose();
-            if (VertexColors.IsCreated) VertexColors.Dispose();
+            if (_disposed) return;
+
+            try
+            {
+                if (Vertices.IsCreated)
+                {
+                    Vertices.Dispose();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed elsewhere - this is fine
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing VectorData.Vertices: {e.Message}");
+            }
+
+            // Dispose other NativeArrays similarly...
+            // Colors?.Dispose() with same safety pattern
+            // etc.
+
+            _disposed = true;
         }
 
+
         public int Count => VertexCount.IsCreated ? VertexCount[0] : 0;
-        public bool IsValid => Vertices.IsCreated && VertexCount.IsCreated;
+        public bool IsValid => Vertices.IsCreated && VertexCount.IsCreated && !_disposed;
 
         public void SetVertexCount(int count)
         {

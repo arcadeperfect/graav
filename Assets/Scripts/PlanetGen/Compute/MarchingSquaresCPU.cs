@@ -39,17 +39,17 @@ namespace PlanetGen.Compute
         /// <summary>
         /// Generates line segments from scalar field data using a Burst-compiled parallel job.
         /// </summary>
-        public static NativeList<float4> GenerateSegmentsBurst(FieldData fieldData, float isoValue, Allocator allocator)
+        public static NativeList<float4> GenerateSegmentsBurst(DeformableFieldData fieldData, float isoValue)
         {
             int width = fieldData.Size;
             int cellCount = (width - 1) * (width - 1);
             // More conservative capacity estimation to avoid frequent resizing
-            var segments = new NativeList<float4>(cellCount / 2, allocator);
+            var segments = new NativeList<float4>(cellCount / 2, Allocator.TempJob);
 
             var job = new MarchingSquaresJob
             {
                 // ScalarField = fieldData.ScalarFieldArray,
-                ScalarField = fieldData.BaseRasterData.Scalar,
+                ScalarField = fieldData.ModifiedScalarField,
                 Width = width,
                 IsoValue = isoValue,
                 Segments = segments.AsParallelWriter()

@@ -264,7 +264,7 @@ namespace PlanetGen
             {
                 Debug.LogError($"[DEBUG] Init failed: {initResult.ErrorMessage}");
             }
-            
+
             Debug.Log("[DEBUG] About to call OnSuccess chain");
 
 
@@ -285,6 +285,56 @@ namespace PlanetGen
                     DisableRendering();
                 });
         }
+
+        // void RegenCompute()
+        // {
+        //     Debug.Log("[DEBUG] RegenCompute called");
+        //
+        //     if (_workingFieldData?.IsValid != true)
+        //     {
+        //         Debug.LogWarning("[DEBUG] RegenCompute: No valid working field data");
+        //         ErrorHandler.LogWarning("PlanetGenMain.RegenCompute",
+        //             "Cannot regenerate compute - no valid working field data");
+        //         return;
+        //     }
+        //
+        //     Debug.Log("[DEBUG] Working field data is valid, continuing...");
+        //     
+        //     
+        //
+        //     // Sync any pending terrain modifications to GPU texture
+        //     bool wasModified = _workingFieldData.SyncTextureIfDirty();
+        //     if (wasModified)
+        //     {
+        //         Debug.Log("[DEBUG] Terrain modifications synced to GPU");
+        //     }
+        //
+        //     // Skip CPU marching squares for now to isolate the issue
+        //     Debug.Log("[DEBUG] About to dispatch compute pipeline");
+        //
+        //     // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
+        //     var dispatchResult = computePipeline.Dispatch(_workingFieldData, gridResolution);
+        //
+        //     Debug.Log($"[DEBUG] Dispatch result: {dispatchResult.IsSuccess}");
+        //     if (!dispatchResult.IsSuccess)
+        //     {
+        //         Debug.LogError($"[DEBUG] Dispatch failed: {dispatchResult.ErrorMessage}");
+        //     }
+        //
+        //     dispatchResult
+        //         .OnSuccess(() =>
+        //         {
+        //             Debug.Log("[DEBUG] Dispatch succeeded, updating material properties");
+        //             // Update material properties only if dispatch succeeded
+        //             UpdateMaterialProperties();
+        //             Debug.Log("[DEBUG] Material properties updated");
+        //         })
+        //         .OnFailure(error =>
+        //         {
+        //             Debug.LogError($"[DEBUG] Dispatch failed in OnFailure: {error}");
+        //             ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
+        //         });
+        // }
 
         void RegenCompute()
         {
@@ -307,7 +357,74 @@ namespace PlanetGen
                 Debug.Log("[DEBUG] Terrain modifications synced to GPU");
             }
 
-            // Skip CPU marching squares for now to isolate the issue
+            // CPU Marching Squares - Re-enable this for colliders
+            if (enableCPUMarchingSquares)
+            {
+                Debug.Log("[DEBUG] Starting CPU marching squares");
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                // Generate segments
+                if (cpuSegments.IsCreated) cpuSegments.Clear();
+                var newSegments = MarchingSquaresCPU.GenerateSegmentsBurst(
+                    _workingFieldData, marchingSquaresThreshold);
+
+                cpuSegments.AddRange(newSegments);
+                newSegments.Dispose();
+
+                lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
+                lastCPUSegmentCount = cpuSegments.Length;
+
+                Debug.Log($"[DEBUG] Generated {cpuSegments.Length} CPU segments in {lastCPUMarchingSquaresTime}ms");
+
+                // Generate polylines and colliders if needed
+                if (enablePolylineGeneration || createColliders)
+                {
+                    Debug.Log("[DEBUG] Extracting polylines and colliders");
+                    stopwatch.Restart();
+
+                    // Dispose old polyline data
+                    if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
+                    if (colliderData.IsCreated) colliderData.Dispose();
+
+                    // Extract polylines with colliders in one pass
+                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
+                        cpuSegments, out colliderData, 3, Allocator.Persistent); // Min 3 points for collider
+
+                    lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
+                    lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+
+                    Debug.Log(
+                        $"[DEBUG] Generated {lastPolylineCount} polylines and {colliderData.Length} colliders in {lastPolylineGenerationTime}ms");
+
+                    // Update colliders if enabled
+                    if (createColliders && colliderData.IsCreated && colliderData.Length > 0)
+                    {
+                        Debug.Log("[DEBUG] Updating colliders from data");
+                        UpdateCollidersFromData();
+                    }
+                    else if (!createColliders)
+                    {
+                        // Disable all colliders if creation is disabled
+                        Debug.Log("[DEBUG] Collider creation disabled, hiding existing colliders");
+                        foreach (var collider in cachedColliders)
+                        {
+                            if (collider != null) collider.enabled = false;
+                        }
+                    }
+                }
+
+                stopwatch.Stop();
+            }
+            else
+            {
+                // If CPU marching squares is disabled, also disable colliders
+                Debug.Log("[DEBUG] CPU marching squares disabled, hiding colliders");
+                foreach (var collider in cachedColliders)
+                {
+                    if (collider != null) collider.enabled = false;
+                }
+            }
+
             Debug.Log("[DEBUG] About to dispatch compute pipeline");
 
             // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
@@ -323,7 +440,6 @@ namespace PlanetGen
                 .OnSuccess(() =>
                 {
                     Debug.Log("[DEBUG] Dispatch succeeded, updating material properties");
-                    // Update material properties only if dispatch succeeded
                     UpdateMaterialProperties();
                     Debug.Log("[DEBUG] Material properties updated");
                 })
@@ -333,6 +449,7 @@ namespace PlanetGen
                     ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
                 });
         }
+
 
         private void UpdateMaterialProperties()
         {
@@ -569,7 +686,5 @@ namespace PlanetGen
         }
 
         #endregion
-
-        
     }
 }
