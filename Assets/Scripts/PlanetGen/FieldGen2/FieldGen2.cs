@@ -43,8 +43,9 @@ namespace PlanetGen.FieldGen2
     {
         #region Events
 
-        public static event Action<FieldGen2> OnVectorDataGenerated;
-        public static event Action<FieldGen2> OnPlanetDataGenerated;
+        public event Action OnVectorDataGenerated;
+        public event Action OnPlanetDataGenerated;
+        public event Action<FieldData2> OnDataReady;
 
         #endregion
 
@@ -282,37 +283,36 @@ namespace PlanetGen.FieldGen2
 
         }
         // void OnNodeParameterChanged() => QueueRegeneration(UpdateReason.NodeParameterChanged);
-        public FieldData2 ExternalProcess(float seed)
+        public void ExternalProcess(float seed)
         {
             // TODO: implement seed
-            // QueueRegeneration(Because.ExternalProcess);
-            GenerateFieldSynchronous();
-            return FieldData;
+            QueueRegeneration(Because.ExternalProcess);
+            // GenerateFieldSynchronous()
         }
 
         #endregion
 
         #region Internal Methods
-        public void GenerateFieldSynchronous(bool forceMaskRegen = false)
-        {
-            // Ensure any pending async job is completed before we start a new synchronous one
-            if (rasterizeJobHandle.IsCompleted == false)
-            {
-                rasterizeJobHandle.Complete();
-            }
-
-            if (forceMaskRegen || maskRegenQueued)
-            {
-                // Force mask regeneration if needed
-                WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
-                    dominanceSharpness);
-                maskRegenQueued = false; // Reset the flag after synchronous generation
-            }
-
-            // Directly call the processing logic
-            ProcessSequentialGraphs(); // Renamed ProcessSequentialGraphs to avoid confusion and make it clear it's an internal helper
-            
-        }
+        // public void GenerateFieldSynchronous(bool forceMaskRegen = false)
+        // {
+        //     // Ensure any pending async job is completed before we start a new synchronous one
+        //     if (rasterizeJobHandle.IsCompleted == false)
+        //     {
+        //         rasterizeJobHandle.Complete();
+        //     }
+        //
+        //     if (forceMaskRegen || maskRegenQueued)
+        //     {
+        //         // Force mask regeneration if needed
+        //         WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
+        //             dominanceSharpness);
+        //         maskRegenQueued = false; // Reset the flag after synchronous generation
+        //     }
+        //
+        //     // Directly call the processing logic
+        //     ProcessSequentialGraphs(); // Renamed ProcessSequentialGraphs to avoid confusion and make it clear it's an internal helper
+        //     
+        // }
         private void ProcessSequentialGraphs()
         {
             // print("Processing sequential graphs");
@@ -398,7 +398,7 @@ namespace PlanetGen.FieldGen2
 
                 currentVectorResult = currentVector;
                 hasVectorResult = true;
-                OnVectorDataGenerated?.Invoke(this);
+                OnVectorDataGenerated?.Invoke();
             }
             catch (Exception e)
             {
@@ -467,7 +467,8 @@ namespace PlanetGen.FieldGen2
 
                 hasRasterResult = true;
                 FieldData = new FieldData2(textureSize, currentRaster, currentVector);
-                OnPlanetDataGenerated?.Invoke(this);
+                OnPlanetDataGenerated?.Invoke();
+                OnDataReady?.Invoke(FieldData);
             }
 
             catch (Exception e)

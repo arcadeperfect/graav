@@ -25,10 +25,10 @@ namespace PlanetGen
         [Header("Field Generation")] [TriggerFieldRegen]
         public int scalarFieldWidth;
 
-        [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
-        [Range(0, 50f)] [TriggerFieldRegen] public float amplitude = 0.5f;
-        [Range(0, 50f)] [TriggerFieldRegen] public float frequency = 0.5f;
-        [Range(0, 5)] [TriggerFieldRegen] public int blur;
+        // [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
+        // [Range(0, 50f)] [TriggerFieldRegen] public float amplitude = 0.5f;
+        // [Range(0, 50f)] [TriggerFieldRegen] public float frequency = 0.5f;
+        // [Range(0, 5)] [TriggerFieldRegen] public int blur;
 
         [Header("Field Preview")] [Range(0, 2)] [TriggerFieldRegen]
         public int fieldDisplayMode;
@@ -49,7 +49,7 @@ namespace PlanetGen
 
         [TriggerFieldRegen] public bool useFastMethod = true;
         [TriggerFieldRegen] public int batchSize = 4;
-        [TriggerFieldRegen] public bool showPerformanceStats = true;
+        
 
 
         // [Header("Field Processing")] [TriggerComputeRegen]
@@ -89,7 +89,9 @@ namespace PlanetGen
         [Range(-0.5f, 0.5f)] [TriggerComputeRegen]
         public float bandInterval = 0.02f;
 
-        [Header("Debug")] public bool showCPUSegments = true;
+        [Header("Debug")] 
+        public bool showPerformanceStats = true;
+        public bool showCPUSegments = true;
         public bool showGPUSegments = true;
         public bool showCPUPolylines;
 
@@ -141,7 +143,7 @@ namespace PlanetGen
         {
             
             Init();
-            RegenField();
+            // ProcessFieldData();
         }
 
         public void Update()
@@ -151,9 +153,14 @@ namespace PlanetGen
             if (changes.HasFieldRegen())
             {
                 computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
+                // ProcessFieldData();
                 RegenField();
             }
-            else if (changes.HasComputeRegen() || computeConstantly)
+            else if (changes.HasComputeRegen())
+            {
+                RegenCompute();
+            }
+            else if (computeConstantly)
             {
                 RegenCompute();
             }
@@ -185,14 +192,8 @@ namespace PlanetGen
         {
             paramWatcher = new ParameterWatcher(this);
             fieldGen = GetComponent<FieldGen2.FieldGen2>();
-            _fieldData = fieldGen.ExternalProcess(0); //TODO implement seed
-            // _fieldData = fieldGen.FieldData;
-            if (_fieldData == null)
-            {
-                Debug.LogError("Field data is not initialized. Please ensure FieldGen2 is set up correctly.");
-                return;
-            }
             
+            fieldGen.OnDataReady += ProcessFieldData;
             computePipeline = new ComputePipeline(this);
             computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
 
@@ -203,9 +204,14 @@ namespace PlanetGen
 
         void RegenField()
         {
-            // Generate the field data
-            // fieldGen.GetTex(ref field_textures, 0, radius, amplitude, frequency, scalarFieldWidth, blur);
-            // fieldGen.ExternalProcess(0); //TODO implement seed
+            fieldGen.ExternalProcess(0); //TODO implement seed
+        }
+
+        void ProcessFieldData(FieldData2 fieldData)
+        {
+            
+            _fieldData = fieldData;
+            
             if(_fieldData == null)
             {
                 Debug.LogError("Field data is not initialized. Please ensure FieldGen2 is set up correctly.");
@@ -218,10 +224,8 @@ namespace PlanetGen
                 return;
             }
             
-            print("RegenField called");
             
             computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
-            // fieldRenderer.material.SetTexture("_FieldTex", field_textures.ScalarFieldTexture);
             fieldRenderer.material.SetTexture("_FieldTex", _fieldData.ScalarFieldTexture);
             fieldRenderer.material.SetTexture("_ColorTex", _fieldData.Colors);
             fieldRenderer.material.SetInt("_Mode", fieldDisplayMode);
@@ -234,7 +238,8 @@ namespace PlanetGen
 
         void RegenCompute()
         {
-            print("RegenCompute called");
+            
+            
             if (enableCPUMarchingSquares && _fieldData.IsDataValid)
             {
                 var stopwatch = new Stopwatch();
@@ -253,25 +258,25 @@ namespace PlanetGen
                     stopwatch.Reset();
                 }
 
-                // // --- Step 2: Extract Polylines ---
-                // if (enablePolylineGeneration)
-                // {
-                //     if (showPerformanceStats) stopwatch.Start();
-                //
-                //     if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-                //     cpuPolylines = MarchingSquaresCPU.ExtractPolylinesBurst(cpuSegments, Allocator.Persistent);
-                //
-                //
-                //
-                //     if (showPerformanceStats)
-                //     {
-                //         stopwatch.Stop();
-                //         lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
-                //         lastPolylineCount = cpuPolylines.PolylineRanges.Length;
-                //
-                //         print($"{lastPolylineCount} polylines took {lastPolylineGenerationTime} ms");
-                //     }
-                // }
+                // --- Step 2: Extract Polylines ---
+                if (enablePolylineGeneration)
+                {
+                    if (showPerformanceStats) stopwatch.Start();
+                
+                    if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
+                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesBurst(cpuSegments, Allocator.Persistent);
+                
+                
+                
+                    if (showPerformanceStats)
+                    {
+                        stopwatch.Stop();
+                        lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
+                        lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+                
+                        print($"{lastPolylineCount} polylines took {lastPolylineGenerationTime} ms");
+                    }
+                }
 
                 if (enablePolylineGeneration)
                 {

@@ -252,7 +252,6 @@ GameObject:
   - component: {fileID: 256626950}
   - component: {fileID: 256626949}
   - component: {fileID: 256626948}
-  - component: {fileID: 256626952}
   m_Layer: 0
   m_Name: Main
   m_TagString: Untagged
@@ -342,7 +341,6 @@ MonoBehaviour:
   marchingSquaresThreshold: 0.5
   useFastMethod: 1
   batchSize: 4
-  showPerformanceStats: 1
   sdfDisplayMode: 0
   sdfDisplayOpacity: 1
   sdfDisplayMult: 1
@@ -358,6 +356,7 @@ MonoBehaviour:
   numberOfBands: 50
   bandStartOffset: -0.025
   bandInterval: -0.025
+  showPerformanceStats: 0
   showCPUSegments: 0
   showGPUSegments: 0
   showCPUPolylines: 1
@@ -390,20 +389,6 @@ Transform:
   - {fileID: 1244477867}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &256626952
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 256626947}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 83746430a7d749be8ec8f02af4a840af, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  visualizationMode: 0
-  targetRenderer: {fileID: 2115854264}
 --- !u!1 &299205188
 GameObject:
   m_ObjectHideFlags: 0
@@ -1002,7 +987,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!23 &2115854264
 MeshRenderer:
   m_ObjectHideFlags: 0

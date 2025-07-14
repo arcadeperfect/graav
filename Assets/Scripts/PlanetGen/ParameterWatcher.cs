@@ -91,11 +91,11 @@ namespace PlanetGen
             CacheCurrentValues();
 
             // Debug info
-            Debug.Log($"ParameterWatcher initialized for {target.GetType().Name}:");
-            Debug.Log($"  - {fieldRegenFields.Length} field regen parameters");
-            Debug.Log($"  - {computeRegenFields.Length} compute regen parameters");
-            Debug.Log($"  - {bufferReInitFields.Length} buffer reinit parameters");
-            Debug.Log($"  - {maskRegenFields.Length} mask regen parameters"); // ADDED: Debu
+            // Debug.Log($"ParameterWatcher initialized for {target.GetType().Name}:");
+            // Debug.Log($"  - {fieldRegenFields.Length} field regen parameters");
+            // Debug.Log($"  - {computeRegenFields.Length} compute regen parameters");
+            // Debug.Log($"  - {bufferReInitFields.Length} buffer reinit parameters");
+            // Debug.Log($"  - {maskRegenFields.Length} mask regen parameters"); 
         }
 
         /// <summary>
