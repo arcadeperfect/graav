@@ -1,4 +1,4 @@
-using PlanetGen.FieldGen;
+using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;

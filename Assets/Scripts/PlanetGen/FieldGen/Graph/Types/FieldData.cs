@@ -7,8 +7,7 @@ using Unity.Mathematics;
 using UnityEngine;
 
 namespace PlanetGen.FieldGen2.Types
-{
-    public sealed class FieldData : IDisposable
+{    public class FieldData : IDisposable
     {
         public RasterData BaseRasterData { get; }
         public VectorData VectorData { get; }
@@ -27,7 +26,7 @@ namespace PlanetGen.FieldGen2.Types
             Size = size;
             BaseRasterData = rasterData;
             VectorData = vectorData;
-
+            
             try
             {
                 BaseTextureData = new TextureData(size, rasterData);
@@ -35,9 +34,9 @@ namespace PlanetGen.FieldGen2.Types
             }
             catch
             {
-                // If texture creation fails, we need to clean up the data we took ownership of
-                BaseRasterData.Dispose();
-                VectorData.Dispose();
+                // If texture creation fails, dispose the data we took ownership of
+                if (BaseRasterData.IsValid) BaseRasterData.Dispose();
+                if (VectorData.IsValid) VectorData.Dispose();
                 throw;
             }
         }
@@ -48,28 +47,43 @@ namespace PlanetGen.FieldGen2.Types
         /// </summary>
         public DeformableFieldData CreateDeformableVersion()
         {
-            ThrowIfDisposed();
+            if (_disposed) throw new ObjectDisposedException(nameof(FieldData));
             return new DeformableFieldData(this);
         }
-
+        
         public void Dispose()
         {
             if (_disposed) return;
-
-            BaseTextureData?.Dispose();
-            if(VectorData.IsValid) 
-                VectorData.Dispose();
-            if (BaseRasterData.IsValid)
-                BaseRasterData.Dispose();
-            // VectorData?.Dispose();
-            // BaseRasterData?.Dispose();
-
+            
+            try
+            {
+                // Dispose in reverse order of creation for safety
+                BaseTextureData?.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing TextureData: {e.Message}");
+            }
+            
+            try
+            {
+                if (VectorData.IsValid) VectorData.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing VectorData: {e.Message}");
+            }
+            
+            try
+            {
+                if (BaseRasterData.IsValid) BaseRasterData.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing RasterData: {e.Message}");
+            }
+            
             _disposed = true;
-        }
-
-        private void ThrowIfDisposed()
-        {
-            if (_disposed) throw new ObjectDisposedException(nameof(FieldData));
         }
     }
 
@@ -80,16 +94,15 @@ namespace PlanetGen.FieldGen2.Types
     public sealed class DeformableFieldData : IDisposable
     {
         private readonly FieldData _baseData;
-
+        
         // Only these are mutable and owned by this instance
-        // Use fields instead of properties to allow direct modification
         private NativeArray<float> _modifiedScalarField;
         private RenderTexture _modifiedScalarTexture;
-
+        
         // Public accessors
         public NativeArray<float> ModifiedScalarField => _modifiedScalarField;
         public RenderTexture ModifiedScalarTexture => _modifiedScalarTexture;
-
+        
         // Everything else is immutable and shared from base data
         public VectorData VectorData => _baseData.VectorData;
         public RenderTexture ColorTexture => _baseData.BaseTextureData.ColorTex;
@@ -102,20 +115,20 @@ namespace PlanetGen.FieldGen2.Types
         internal DeformableFieldData(FieldData baseData)
         {
             _baseData = baseData ?? throw new ArgumentNullException(nameof(baseData));
-
+            
             // Create our own copy of the scalar data for modification
             var originalScalar = baseData.BaseRasterData.Scalar;
             _modifiedScalarField = new NativeArray<float>(originalScalar, Allocator.Persistent);
-
+            
             // Create our own scalar texture
             _modifiedScalarTexture = new RenderTexture(
-                baseData.Size, baseData.Size, 0,
+                baseData.Size, baseData.Size, 0, 
                 RenderTextureFormat.RFloat, RenderTextureReadWrite.Linear)
             {
                 enableRandomWrite = true
             };
             _modifiedScalarTexture.Create();
-
+            
             // Initially sync with base data
             SyncTextureFromArray();
         }
@@ -126,12 +139,12 @@ namespace PlanetGen.FieldGen2.Types
         /// </summary>
         public void DeformTerrain(int2 center, float radius, float strength, bool additive = true)
         {
-            ThrowIfDisposed();
-
+            if (_disposed) throw new ObjectDisposedException(nameof(DeformableFieldData));
+            
             int centerX = center.x;
             int centerY = center.y;
             int radiusInt = Mathf.CeilToInt(radius);
-
+            
             for (int y = Mathf.Max(0, centerY - radiusInt); y < Mathf.Min(Size, centerY + radiusInt); y++)
             {
                 for (int x = Mathf.Max(0, centerX - radiusInt); x < Mathf.Min(Size, centerX + radiusInt); x++)
@@ -141,9 +154,9 @@ namespace PlanetGen.FieldGen2.Types
                     {
                         float falloff = 1.0f - (distance / radius);
                         float effect = strength * falloff;
-
+                        
                         int index = y * Size + x;
-
+                        
                         if (additive)
                             _modifiedScalarField[index] = math.clamp(_modifiedScalarField[index] + effect, 0f, 1f);
                         else
@@ -151,7 +164,7 @@ namespace PlanetGen.FieldGen2.Types
                     }
                 }
             }
-
+            
             _isDirty = true;
         }
 
@@ -160,8 +173,8 @@ namespace PlanetGen.FieldGen2.Types
         /// </summary>
         public void ResetToBase()
         {
-            ThrowIfDisposed();
-
+            if (_disposed) throw new ObjectDisposedException(nameof(DeformableFieldData));
+            
             var originalScalar = _baseData.BaseRasterData.Scalar;
             _modifiedScalarField.CopyFrom(originalScalar);
             _isDirty = true;
@@ -173,10 +186,10 @@ namespace PlanetGen.FieldGen2.Types
         /// </summary>
         public bool SyncTextureIfDirty()
         {
-            ThrowIfDisposed();
-
+            if (_disposed) throw new ObjectDisposedException(nameof(DeformableFieldData));
+            
             if (!_isDirty) return false;
-
+            
             SyncTextureFromArray();
             _isDirty = false;
             return true;
@@ -195,22 +208,32 @@ namespace PlanetGen.FieldGen2.Types
         public void Dispose()
         {
             if (_disposed) return;
-
-            if (_modifiedScalarTexture != null)
+            
+            try
             {
-                _modifiedScalarTexture.Release();
-                UnityEngine.Object.DestroyImmediate(_modifiedScalarTexture);
+                if (_modifiedScalarTexture != null)
+                {
+                    _modifiedScalarTexture.Release();
+                    UnityEngine.Object.DestroyImmediate(_modifiedScalarTexture);
+                }
             }
-
-            if (_modifiedScalarField.IsCreated)
-                _modifiedScalarField.Dispose();
-
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing ModifiedScalarTexture: {e.Message}");
+            }
+            
+            try
+            {
+                if (_modifiedScalarField.IsCreated)
+                    _modifiedScalarField.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error disposing ModifiedScalarField: {e.Message}");
+            }
+            
             _disposed = true;
         }
-
-        private void ThrowIfDisposed()
-        {
-            if (_disposed) throw new ObjectDisposedException(nameof(DeformableFieldData));
-        }
     }
+dd 
 }

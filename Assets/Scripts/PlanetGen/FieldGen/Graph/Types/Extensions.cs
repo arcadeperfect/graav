@@ -1,8 +1,7 @@
 using System;
 using Unity.Collections;
-using Unity.Mathematics;
 
-namespace PlanetGen.FieldGen
+namespace PlanetGen.FieldGen2.Graph.Types
 {
     public static class NativeArray2DExtensions
     {

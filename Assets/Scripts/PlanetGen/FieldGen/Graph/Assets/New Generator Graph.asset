@@ -32,9 +32,9 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 10
-  amplitude: 1.59
-  seed: 12345
+  frequency: 1.24
+  amplitude: 1
+  seed: 12331.1
   octaves: 4
   lacunarity: 2
   persistence: 0.5
@@ -51,7 +51,7 @@ MonoBehaviour:
   m_Name: Vector Circle Expander
   m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleExpanderNode
   graph: {fileID: 11400000}
-  position: {x: -201.5, y: 5}
+  position: {x: 8, y: 136}
   folded: 0
   ports:
     keys:
@@ -62,6 +62,48 @@ MonoBehaviour:
       _node: {fileID: -6735227374477596016}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: output
+      _node: {fileID: -6735227374477596016}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  vectorInput: {fileID: 0}
+  output: {fileID: 0}
+  expansionAmount: 0.08
+--- !u!114 &-6709080615956600172
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: Vector Circle Deformer
+  m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleDeformerNode
+  graph: {fileID: 11400000}
+  position: {x: -40.5, y: -186.5}
+  folded: 0
+  ports:
+    keys:
+    - vectorInput
+    - deformationInput
+    - output
+    values:
+    - _fieldName: vectorInput
+      _node: {fileID: -6709080615956600172}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
         node: {fileID: 2104905435081346368}
@@ -70,8 +112,20 @@ MonoBehaviour:
       _connectionType: 1
       _typeConstraint: 2
       _dynamic: 0
+    - _fieldName: deformationInput
+      _node: {fileID: -6709080615956600172}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: -1891964609331708947}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
     - _fieldName: output
-      _node: {fileID: -6735227374477596016}
+      _node: {fileID: -6709080615956600172}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
@@ -83,8 +137,9 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   vectorInput: {fileID: 0}
+  deformationInput: {fileID: 0}
   output: {fileID: 0}
-  expansionAmount: 0.3
+  deformationAmplitude: 1.76
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -159,7 +214,45 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 32.65
+  warpStrength: 0
+--- !u!114 &-1891964609331708947
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e534132e3d1e410093a3877173bdc490, type: 3}
+  m_Name: Simplex Noise
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -471.5, y: 150.5}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: -1891964609331708947}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: deformationInput
+        node: {fileID: -6709080615956600172}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  frequency: 4.11
+  amplitude: 0.12
+  seed: 12345
+  octaves: 4
+  lacunarity: 2
+  persistence: 0.5
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -181,6 +274,8 @@ MonoBehaviour:
   - {fileID: -7063200831616992041}
   - {fileID: 1277561118898541402}
   - {fileID: -6735227374477596016}
+  - {fileID: -6709080615956600172}
+  - {fileID: -1891964609331708947}
   globalContribution: 1
   gobalSeed: 0
 --- !u!114 &1277561118898541402
@@ -246,7 +341,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: vectorInput
-        node: {fileID: -6735227374477596016}
+        node: {fileID: -6709080615956600172}
         reroutePoints: []
       _direction: 1
       _connectionType: 1
@@ -267,7 +362,7 @@ MonoBehaviour:
   m_Name: Vector Output
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 376, y: -136}
+  position: {x: 440, y: -168}
   folded: 0
   ports:
     keys:
@@ -279,7 +374,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
-        node: {fileID: -6735227374477596016}
+        node: {fileID: -6709080615956600172}
         reroutePoints: []
       _direction: 0
       _connectionType: 1

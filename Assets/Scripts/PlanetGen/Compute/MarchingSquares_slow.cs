@@ -1,10 +1,10 @@
 using System.Collections.Generic;
-using PlanetGen.FieldGen;
 using PlanetGen.FieldGen2.Types;
 using Unity.Mathematics;
 using UnityEngine;
+// using PlanetGen.FieldGen;
 
-namespace PlanetGen.Compute
+namespace PlanetGen.FieldGen2
 {
     /// <summary>
     /// Provides a CPU implementation of the Marching Squares algorithm that is designed to
