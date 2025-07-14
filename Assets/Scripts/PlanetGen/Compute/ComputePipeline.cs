@@ -36,71 +36,160 @@ namespace PlanetGen.Compute
         private bool _isInitialized = false;
 
 
+        // public ComputePipeline(PlanetGenMain parent)
+        // {
+        //     _parent = parent ?? throw new ArgumentNullException(nameof(parent));
+        //     LoadShaders();
+        //     CreatePipelineComponents();
+        // }
+
         public ComputePipeline(PlanetGenMain parent)
         {
-            _parent = parent ?? throw new ArgumentNullException(nameof(parent));
-            LoadShaders();
-            CreatePipelineComponents();
+            if (parent == null)
+            {
+                throw new ArgumentNullException(nameof(parent));
+            }
+
+            _parent = parent;
+
+            var loadResult = LoadShaders();
+            if (!loadResult.IsSuccess)
+            {
+                throw new InvalidOperationException($"Failed to create ComputePipeline: {loadResult.ErrorMessage}");
+            }
+
+            var componentResult = CreatePipelineComponents();
+            if (!componentResult.IsSuccess)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to create ComputePipeline components: {componentResult.ErrorMessage}");
+            }
         }
 
-        private void LoadShaders()
+        private Result LoadShaders()
         {
-            _marchingSquaresShader = CSP.MarchingSquares.Get();
-            if (_marchingSquaresShader == null)
-                throw new InvalidOperationException("Failed to load MarchingSquares shader");
+            return ErrorHandler.TryExecute("ComputePipeline.LoadShaders", () =>
+            {
+                _marchingSquaresShader = CSP.MarchingSquares.Get();
+                if (_marchingSquaresShader == null)
+                {
+                    throw new InvalidOperationException("Failed to load MarchingSquares shader");
+                }
 
-            _marchingSquaresKernel = CSP.MarchingSquares.Kernels.MarchingSquares;
-            if (_marchingSquaresKernel < 0)
-                throw new InvalidOperationException("Failed to get MarchingSquares kernel");
+                _marchingSquaresKernel = CSP.MarchingSquares.Kernels.MarchingSquares;
+                if (_marchingSquaresKernel < 0)
+                    throw new InvalidOperationException("Failed to load MarchingSquares kernel");
+            });
         }
 
-        private void CreatePipelineComponents()
+        // private void LoadShaders()
+        // {
+        //     _marchingSquaresShader = CSP.MarchingSquares.Get();
+        //     if (_marchingSquaresShader == null)
+        //         throw new InvalidOperationException("Failed to load MarchingSquares shader");
+        //
+        //     _marchingSquaresKernel = CSP.MarchingSquares.Kernels.MarchingSquares;
+        //     if (_marchingSquaresKernel < 0)
+        //         throw new InvalidOperationException("Failed to get MarchingSquares kernel");
+        // }
+
+        private Result CreatePipelineComponents()
         {
-            try
+            return ErrorHandler.TryExecute("ComputePipeline.CreategPipelineComponents", () =>
             {
                 _jumpFlooder = _resources.Track(new JumpFlooder());
                 _udfGen = _resources.Track(new UdfFromSegments());
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Failed to create pipeline components: {e.Message}");
-                throw;
-            }
+            });
         }
 
-        public void Init(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
+        // private void CreatePipelineComponents()
+        // {
+        //     try
+        //     {
+        //         _jumpFlooder = _resources.Track(new JumpFlooder());
+        //         _udfGen = _resources.Track(new UdfFromSegments());
+        //     }
+        //     catch (Exception e)
+        //     {
+        //         Debug.LogError($"Failed to create pipeline components: {e.Message}");
+        //         throw;
+        //     }
+        // }
+
+        public Result Init(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
         {
-            if (fieldWidth <= 0) throw new ArgumentException("Field width must be positive", nameof(fieldWidth));
-            if (textureRes <= 0) throw new ArgumentException("Texture resolution must be positive", nameof(textureRes));
-            if (gridResolution <= 0)
-                throw new ArgumentException("Grid resolution must be positive", nameof(gridResolution));
-            if (maxSegmentsPerCell <= 0)
-                throw new ArgumentException("Max segments per cell must be positive", nameof(maxSegmentsPerCell));
+            var validation =
+                PipelineValidators.ValidateComputePipelineInit(fieldWidth, textureRes, gridResolution,
+                    maxSegmentsPerCell);
+
+            if (!validation.IsValid)
+            {
+                ErrorHandler.LogValidationResult("ComputePipeline.Init", validation);
+                return Result.Failure($"Parameter validation failed: {validation.GetSummary()}");
+            }
+
+            if (validation.HasWarnings)
+            {
+                ErrorHandler.LogValidationResult("ComputePipeline.Init", validation);
+            }
 
             _fieldResolution = fieldWidth;
             _textureResolution = textureRes;
 
-            try
+            var initResult = ErrorHandler.TryExecute("ComputePipeline.Init", () =>
+                {
+                    CreateBuffers(fieldWidth);
+                    CreateTextures(textureRes);
+                    InitializePipelines();
+                    InitializeSubComponents(textureRes, gridResolution, maxSegmentsPerCell);
+                    _isInitialized = true;
+                    var counts = _resources.GetResourceCounts();
+                    Debug.Log(
+                        $"ComputePipeline initialized successfully: {counts.buffers} buffers, {counts.textures} textures, {counts.disposables} other resources");
+                }
+            );
+
+            if (!initResult.IsSuccess)
             {
-                CreateBuffers(fieldWidth);
-                CreateTextures(textureRes);
-                InitializePipelines();
-                InitializeSubComponents(textureRes, gridResolution, maxSegmentsPerCell);
-
-                _isInitialized = true;
-
-                var counts = _resources.GetResourceCounts();
-                Debug.Log(
-                    $"ComputePipeline initialized: {counts.buffers} buffers, {counts.textures} textures, {counts.disposables} other resources");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"ComputePipeline initialization failed: {e.Message}");
-
+                _isInitialized = false;
                 ClearResources();
-                throw;
             }
+
+            return initResult;
         }
+        // public void Init(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
+        // {
+        //     if (fieldWidth <= 0) throw new ArgumentException("Field width must be positive", nameof(fieldWidth));
+        //     if (textureRes <= 0) throw new ArgumentException("Texture resolution must be positive", nameof(textureRes));
+        //     if (gridResolution <= 0)
+        //         throw new ArgumentException("Grid resolution must be positive", nameof(gridResolution));
+        //     if (maxSegmentsPerCell <= 0)
+        //         throw new ArgumentException("Max segments per cell must be positive", nameof(maxSegmentsPerCell));
+        //
+        //     _fieldResolution = fieldWidth;
+        //     _textureResolution = textureRes;
+        //
+        //     try
+        //     {
+        //         CreateBuffers(fieldWidth);
+        //         CreateTextures(textureRes);
+        //         InitializePipelines();
+        //         InitializeSubComponents(textureRes, gridResolution, maxSegmentsPerCell);
+        //
+        //         _isInitialized = true;
+        //
+        //         var counts = _resources.GetResourceCounts();
+        //         Debug.Log(
+        //             $"ComputePipeline initialized: {counts.buffers} buffers, {counts.textures} textures, {counts.disposables} other resources");
+        //     }
+        //     catch (Exception e)
+        //     {
+        //         Debug.LogError($"ComputePipeline initialization failed: {e.Message}");
+        //
+        //         ClearResources();
+        //         throw;
+        //     }
+        // }
 
         private void CreateBuffers(int fieldWidth)
         {
@@ -179,31 +268,6 @@ namespace PlanetGen.Compute
             _isInitialized = false;
         }
 
-        public void OldDispatch(DeformableFieldData workingData, int gridResolution)
-        {
-            if (!_isInitialized)
-            {
-                throw new InvalidOperationException("ComputePipeline must be initialized before dispatching");
-            }
-
-            if (workingData?.IsValid != true)
-            {
-                throw new ArgumentException("working data is invalid", nameof(workingData));
-            }
-
-            try
-            {
-                GenerateSegments(workingData);
-                GenerateSignedDistanceField(workingData.ModifiedScalarTexture);
-                GenerateWarpedSDF();
-                GenerateSurfaceUdf(gridResolution);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"ComputePipeline dispatch failed: {e.Message}");
-                throw;
-            }
-        }
 
         /// <summary>
         /// Generate line segments from the original scalar field using marching squares
@@ -211,6 +275,9 @@ namespace PlanetGen.Compute
         /// <param name="fieldData"></param>
         void GenerateSegments(DeformableFieldData fieldData)
         {
+            if (_marchingSquaresShader == null)
+                throw new InvalidOperationException("MarchingSquares shader is not loaded");
+
             var msShader = _marchingSquaresShader;
 
             // Reset segment buffers
@@ -239,6 +306,8 @@ namespace PlanetGen.Compute
         /// <param name="scalarField"></param>
         void GenerateSignedDistanceField(RenderTexture scalarField)
         {
+            if (_jumpFlooder == null)
+                throw new InvalidOperationException("JumpFlooder is not initialized");
             _jumpFlooder.GenerateSeedsFromScalarField(scalarField, 0.5f);
             _jumpFlooder.RunJumpFlood();
             _jumpFlooder.FinalizeSDF(JumpFloodSdfTexture, false, scalarField, 0.5f);
@@ -249,6 +318,8 @@ namespace PlanetGen.Compute
         /// </summary>
         void GenerateWarpedSDF()
         {
+            if (_sdfDomainWarpPingPong == null)
+                throw new InvalidOperationException("SDF domain warp pipeline is not initialized");
             var sdfInput = new ComputeResources();
             sdfInput.Textures["field"] = JumpFloodSdfTexture;
 
@@ -260,10 +331,24 @@ namespace PlanetGen.Compute
 
         void GenerateSurfaceUdf(int gridResolution)
         {
+            if (_udfGen == null)
+                throw new InvalidOperationException("UDF generator is not initialized");
+
             if (_parent.bruteForce)
                 _udfGen.GenerateUdf_BruteForce(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
             else
                 _udfGen.GenerateUdf(SegmentsBuffer, SegmentCountBuffer, SurfaceUdfTexture);
+        }
+
+        public string GetStatus()
+        {
+            if(!_isInitialized)
+                return "Not initialized";
+            
+            var counts = _resources.GetResourceCounts();
+            return $"Initialized - Field: {_fieldResolution}x{_fieldResolution}, " +
+                   $"Texture: {_textureResolution}x{_textureResolution}, " +
+                   $"Resources: {counts.buffers} buffers, {counts.textures} textures";
         }
 
         public void Dispose()
@@ -272,56 +357,35 @@ namespace PlanetGen.Compute
             _resources.Dispose();
         }
 
+
         /// <summary>
-        /// Initialize pipeline with comprehensive validation and error handling
+        /// Dispatch pipeline with validation and comprehensive error handling
         /// </summary>
-        public Result NewInit(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
+        public Result Dispatch(DeformableFieldData workingData, int gridResolution)
         {
-            var validation =
-                PipelineValidators.ValidateComputePipelineInit(fieldWidth, textureRes, gridResolution,
-                    maxSegmentsPerCell);
+            // Pre-dispatch validation
+            if (!_isInitialized)
+                return Result.Failure("ComputePipeline must be initialized before dispatch. Call Init() first.");
+
+            if (workingData?.IsValid != true)
+                return Result.Failure("Working data is invalid or null. Ensure field data is properly generated.");
+
+            if (gridResolution <= 0)
+                return Result.Failure($"Grid resolution must be positive, got {gridResolution}");
+
+            // Validate that working data textures are accessible
+            var validation = ParameterValidator.Create()
+                .ValidateTexture(workingData.ModifiedScalarTexture, "ModifiedScalarTexture")
+                .ValidateTexture(workingData.ColorTexture, "ColorTexture")
+                .Build();
 
             if (!validation.IsValid)
             {
-                ErrorHandler.LogValidationResult("ComputePipeline.Init", validation);
-                return Result.Failure($"Parameter validation failed: {validation.GetSummary()}");
+                ErrorHandler.LogValidationResult("ComputePipeline.Dispatch", validation);
+                return Result.Failure($"Working data validation failed: {validation.GetSummary()}");
             }
 
-            if (validation.Warnings.Any())
-            {
-                ErrorHandler.LogValidationResult("ComputePipeline.Init", validation);
-            }
-
-            _fieldResolution = fieldWidth;
-            _textureResolution = textureRes;
-
-            return ErrorHandler.TryExecute("ComputePipeline.Init", () =>
-            {
-                CreateBuffers(fieldWidth);
-                CreateTextures(textureRes);
-                InitializePipelines();
-                InitializeSubComponents(textureRes, gridResolution, maxSegmentsPerCell);
-
-                _isInitialized = true;
-
-                var counts = _resources.GetResourceCounts();
-                Debug.Log(
-                    $"ComputePipeline initialized successfully: {counts.buffers} buffers, {counts.textures} textures, {counts.disposables} other resources");
-            });
-        }
-        
-        /// <summary>
-        /// Dispatch with validation and error handling
-        /// </summary>
-         
-        public Result Dispatch(DeformableFieldData workingData, int gridResolution)
-        {
-            if(!_isInitialized)
-                return Result.Failure("ComputePipeline must be initialized before dispatching");
-            
-            if(workingData?.IsValid != true)
-                return Result.Failure("Data is invalid");
-
+            // Execute dispatch with comprehensive error handling
             return ErrorHandler.TryExecute("ComputePipeline.Dispatch", () =>
             {
                 GenerateSegments(workingData);

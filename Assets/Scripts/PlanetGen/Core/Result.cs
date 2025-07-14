@@ -53,11 +53,38 @@ namespace PlanetGen.Core
         }
 
         /// <summary>
+        /// Execute an action if successful, return original result
+        /// </summary>
+        public Result<T> OnSuccess(Action<T> action)
+        {
+            if (IsSuccess) action(Value);
+            return this;
+        }
+
+        /// <summary>
+        /// Execute an action if successful (ignoring the value), return original result
+        /// </summary>
+        public Result<T> OnSuccess(Action action)
+        {
+            if (IsSuccess) action();
+            return this;
+        }
+
+        /// <summary>
         /// Execute an action if failed, return original result
         /// </summary>
         public Result<T> OnFailure(Action<string> action)
         {
             if (!IsSuccess) action(ErrorMessage);
+            return this;
+        }
+
+        /// <summary>
+        /// Execute an action if failed (ignoring the error message), return original result
+        /// </summary>
+        public Result<T> OnFailure(Action action)
+        {
+            if (!IsSuccess) action();
             return this;
         }
     }
@@ -83,9 +110,9 @@ namespace PlanetGen.Core
         public static Result Failure(string errorMessage, Exception exception) => new(false, errorMessage, exception);
         public static Result Failure(Exception exception) => new(false, exception.Message, exception);
 
-        public Result OnSuccerss(Action action)
+        public Result OnSuccess(Action action)
         {
-            if (!IsSuccess) action();
+            if (IsSuccess) action();
             return this;
         }
 
@@ -104,6 +131,9 @@ namespace PlanetGen.Core
         public List<string> Errors { get; }
         public List<string> Warnings { get; }
         public bool IsValid => !Errors.Any();
+
+        public bool HasWarnings => Warnings.Any();
+        public bool HasErrors => Errors.Any();
 
         public ValidationResult()
         {
