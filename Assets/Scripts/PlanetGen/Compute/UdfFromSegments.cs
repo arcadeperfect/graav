@@ -1,8 +1,9 @@
+using System;
 using UnityEngine;
 
 namespace PlanetGen.Compute
 {
-    public class UdfFromSegments
+    public class UdfFromSegments : IDisposable
     {
         private ComputeShader _udfShader;
         private int _buildGridKernel;

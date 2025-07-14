@@ -39,20 +39,18 @@ namespace PlanetGen.FieldGen2
         public bool IsValid => graph != null;
     }
 
-    public class FieldGen2 : MonoBehaviour
+    public class FieldGenMain : MonoBehaviour
     {
         #region Events
 
         public event Action OnVectorDataGenerated;
         public event Action OnPlanetDataGenerated;
-        public event Action<FieldData2> OnDataReady;
+        public event Action<FieldData> OnDataReady;
 
         #endregion
 
         #region Inspector parameters
 
-        // public bool RemoteMode;
-        //
         [Header("Sequential Vector Processing")] [ListDrawerSettings(ShowIndexLabels = true, DraggableItems = true)]
         [TriggerMaskRegen]
         public List<GraphLayer> graphLayers = new();
@@ -129,7 +127,7 @@ namespace PlanetGen.FieldGen2
         public bool HasRasterData => hasRasterData;
         public int CurrentRasterSize => textureSize;
 
-        public FieldData2 FieldData;
+        private FieldData FieldData;
 
         #endregion
         
@@ -190,9 +188,6 @@ namespace PlanetGen.FieldGen2
         
         private void OnValidate()
         {
-            // if (RemoteMode)
-            //     return;
-            
             if (dominanceNoiseFrequency <= 0) dominanceNoiseFrequency = 0.1f;
             if (dominanceSharpness <= 0) dominanceSharpness = 1f;
             maskRegenQueued = true;
@@ -201,27 +196,7 @@ namespace PlanetGen.FieldGen2
         
         void Update()
         {
-            // if (paramWatcher != null)
-            // {
-            //     var changes = paramWatcher.CheckForChanges();
-            //     
-            //     if (changes.HasMaskRegen())
-            //     {
-            //         print("mask");
-            //         maskRegenQueued = true;
-            //         QueueRegeneration(UpdateReason.MaskRegeneration);
-            //     }
-            //     else if (changes.HasFieldRegen())
-            //     {
-            //         print("field");
-            //         QueueRegeneration(UpdateReason.ValidationTriggered);
-            //     }
-            // }
-            // else
-            // {
-            //     throw new Exception("ParameterWatcher is null");
-            // }
-
+            
             if (maskRegenQueued)
             {
                 RegenerateWeights();
@@ -230,9 +205,9 @@ namespace PlanetGen.FieldGen2
             
             if (queuedUpdate.HasValue)
             {
-                var update = queuedUpdate.Value;
-                Debug.Log($"Processing graphs due to: {update.reason} " +
-                          $"(called by {update.caller} in {update.sourceFile}:{update.sourceLine})");
+                // var update = queuedUpdate.Value;
+                // Debug.Log($"Processing graphs due to: {update.reason} " +
+                //           $"(called by {update.caller} in {update.sourceFile}:{update.sourceLine})");
                 queuedUpdate = null;
                 ProcessSequentialGraphs();
             }
@@ -278,44 +253,23 @@ namespace PlanetGen.FieldGen2
 
         private void OnNodeParameterChanged()
         {
-            // regenQueued = true;
             QueueRegeneration(Because.NodeParameterChanged);
-
         }
-        // void OnNodeParameterChanged() => QueueRegeneration(UpdateReason.NodeParameterChanged);
+
         public void ExternalProcess(float seed)
         {
             // TODO: implement seed
             QueueRegeneration(Because.ExternalProcess);
-            // GenerateFieldSynchronous()
+
         }
 
         #endregion
 
         #region Internal Methods
-        // public void GenerateFieldSynchronous(bool forceMaskRegen = false)
-        // {
-        //     // Ensure any pending async job is completed before we start a new synchronous one
-        //     if (rasterizeJobHandle.IsCompleted == false)
-        //     {
-        //         rasterizeJobHandle.Complete();
-        //     }
-        //
-        //     if (forceMaskRegen || maskRegenQueued)
-        //     {
-        //         // Force mask regeneration if needed
-        //         WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed, dominanceNoiseFrequency,
-        //             dominanceSharpness);
-        //         maskRegenQueued = false; // Reset the flag after synchronous generation
-        //     }
-        //
-        //     // Directly call the processing logic
-        //     ProcessSequentialGraphs(); // Renamed ProcessSequentialGraphs to avoid confusion and make it clear it's an internal helper
-        //     
-        // }
+
         private void ProcessSequentialGraphs()
         {
-            // print("Processing sequential graphs");
+
             if (graphLayers == null || graphLayers.Count == 0)
             {
                 Debug.LogError("No graph layers");
@@ -466,7 +420,8 @@ namespace PlanetGen.FieldGen2
                 }
 
                 hasRasterResult = true;
-                FieldData = new FieldData2(textureSize, currentRaster, currentVector);
+                // FieldData.Dispose();
+                FieldData = new FieldData(textureSize, currentRaster, currentVector);
                 OnPlanetDataGenerated?.Invoke();
                 OnDataReady?.Invoke(FieldData);
             }

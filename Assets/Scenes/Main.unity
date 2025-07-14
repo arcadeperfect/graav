@@ -326,16 +326,11 @@ MonoBehaviour:
   enableSdfPreview: 0
   renderActive: 1
   enableDebugDraw: 0
-  scalarFieldWidth: 256
-  radius: 0.377
-  amplitude: 2.9
-  frequency: 9.08
-  blur: 5
   fieldDisplayMode: 0
   fieldDisplayOpacity: 1
-  enableCPUMarchingSquares: 1
-  enablePolylineGeneration: 1
-  createColliders: 1
+  enableCPUMarchingSquares: 0
+  enablePolylineGeneration: 0
+  createColliders: 0
   colliderMaterial: {fileID: 0}
   colliderThickness: 0.1
   marchingSquaresThreshold: 0.5
@@ -365,7 +360,7 @@ MonoBehaviour:
   polylineDebugColor: {r: 0, g: 1, b: 0, a: 1}
   debugLineDuration: 0.1
   maxDebugSegments: 10000
-  computeConstantly: 1
+  computeConstantly: 0
   fieldRenderer: {fileID: 305708526}
   sdfRenderer: {fileID: 1126870851}
   resultRenderer: {fileID: 1879621549}

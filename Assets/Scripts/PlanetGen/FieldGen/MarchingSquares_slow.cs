@@ -26,12 +26,12 @@ namespace PlanetGen.Compute
         /// <param name="fieldData">The input field data containing scalar values and colors.</param>
         /// <param name="isoValue">The threshold value to generate the iso-surface contour.</param>
         /// <returns>A tuple containing a list of segment positions (Vector4) and a list of segment colors (two per segment).</returns>
-        public static (List<Vector4> segments, List<SegmentColor> segmentColors) GenerateSegments(FieldData2 fieldData, float isoValue)
+        public static (List<Vector4> segments, List<SegmentColor> segmentColors) GenerateSegments(FieldData fieldData, float isoValue)
         {
             var segments = new List<Vector4>();
             var segmentColors = new List<SegmentColor>();
-            int width = fieldData.Width;
-            int height = fieldData.Width; // Assuming square texture
+            int width = fieldData.Size;
+            int height = fieldData.Size; // Assuming square texture
 
             for (int x = 0; x < width - 1; x++)
             {
@@ -43,10 +43,10 @@ namespace PlanetGen.Compute
                     // float v11 = fieldData.GetScalarValue(x + 1, y + 1); // top-right
                     // float v01 = fieldData.GetScalarValue(x, y + 1);     // top-left
 
-                    float v00 = fieldData.RasterData.GetScalarAt(x, y);
-                    float v10 = fieldData.RasterData.GetScalarAt(x + 1, y);
-                    float v11 = fieldData.RasterData.GetScalarAt(x + 1, y + 1);
-                    float v01 = fieldData.RasterData.GetScalarAt(x, y + 1)
+                    float v00 = fieldData.BaseRasterData.GetScalarAt(x, y);
+                    float v10 = fieldData.BaseRasterData.GetScalarAt(x + 1, y);
+                    float v11 = fieldData.BaseRasterData.GetScalarAt(x + 1, y + 1);
+                    float v01 = fieldData.BaseRasterData.GetScalarAt(x, y + 1)
 ;
                     // Sample the colors at the four corners of the cell.
                     // float4 c00_f4 = fieldData.GetColorValue(x, y);
@@ -54,10 +54,10 @@ namespace PlanetGen.Compute
                     // float4 c11_f4 = fieldData.GetColorValue(x + 1, y + 1);
                     // float4 c01_f4 = fieldData.GetColorValue(x, y + 1);
                     
-                    float4 c00_f4 = fieldData.RasterData.GetColorAt(x, y);
-                    float4 c10_f4 = fieldData.RasterData.GetColorAt(x + 1, y);
-                    float4 c11_f4 = fieldData.RasterData.GetColorAt(x + 1, y + 1);
-                    float4 c01_f4 = fieldData.RasterData.GetColorAt(x, y + 1);
+                    float4 c00_f4 = fieldData.BaseRasterData.GetColorAt(x, y);
+                    float4 c10_f4 = fieldData.BaseRasterData.GetColorAt(x + 1, y);
+                    float4 c11_f4 = fieldData.BaseRasterData.GetColorAt(x + 1, y + 1);
+                    float4 c01_f4 = fieldData.BaseRasterData.GetColorAt(x, y + 1);
                     
                     
                     Color c00 = new Color(c00_f4.x, c00_f4.y, c00_f4.z, c00_f4.w);

@@ -21,15 +21,7 @@ namespace PlanetGen
         [TriggerComputeRegen] public bool enableSdfPreview = true;
         [TriggerComputeRegen] public bool renderActive;
         public bool enableDebugDraw = false;
-
-        [Header("Field Generation")] [TriggerFieldRegen]
-        public int scalarFieldWidth;
-
-        // [Range(0, 0.5f)] [TriggerFieldRegen] public float radius = 0.5f;
-        // [Range(0, 50f)] [TriggerFieldRegen] public float amplitude = 0.5f;
-        // [Range(0, 50f)] [TriggerFieldRegen] public float frequency = 0.5f;
-        // [Range(0, 5)] [TriggerFieldRegen] public int blur;
-
+        
         [Header("Field Preview")] [Range(0, 2)] [TriggerFieldRegen]
         public int fieldDisplayMode;
 
@@ -49,15 +41,6 @@ namespace PlanetGen
 
         [TriggerFieldRegen] public bool useFastMethod = true;
         [TriggerFieldRegen] public int batchSize = 4;
-        
-
-
-        // [Header("Field Processing")] [TriggerComputeRegen]
-        // public float domainWarp = 0f;
-        //
-        // [TriggerComputeRegen] public float domainWarpScale;
-        // [TriggerComputeRegen] public int domainWarpIterations = 1;
-        // [TriggerComputeRegen] public float blur1 = 0.1f;
 
         [Header("SDF 1 - used to render the surface")] [Header("Preview")] [TriggerComputeRegen] [Range(0, 3)]
         public int sdfDisplayMode = 0;
@@ -107,8 +90,7 @@ namespace PlanetGen
         #region Members
 
         // Core systems
-        // private FieldGen.FieldGen fieldGen;
-        private FieldGen2.FieldGen2 fieldGen;
+        private FieldGen2.FieldGenMain _fieldGenMain;
         private ComputePipeline computePipeline;
         private ParameterWatcher paramWatcher;
 
@@ -119,7 +101,7 @@ namespace PlanetGen
         public GameObject collidersObject;
 
         // private FieldGen.FieldGen.FieldData field_textures;
-        private FieldData2 _fieldData;
+        private FieldData _fieldData;
         
         private NativeList<float4> cpuSegments;
         private MarchingSquaresCPU.PolylineData cpuPolylines;
@@ -141,9 +123,7 @@ namespace PlanetGen
 
         public void Start()
         {
-            
             Init();
-            // ProcessFieldData();
         }
 
         public void Update()
@@ -152,8 +132,7 @@ namespace PlanetGen
             
             if (changes.HasFieldRegen())
             {
-                computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
-                // ProcessFieldData();
+                computePipeline.Init(_fieldData.Size, textureRes, gridResolution, maxSegmentsPerCell);
                 RegenField();
             }
             else if (changes.HasComputeRegen())
@@ -167,7 +146,7 @@ namespace PlanetGen
             
             if (changes.HasBufferReInit())
             {
-                computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
+                computePipeline.Init(_fieldData.Size, textureRes, gridResolution, maxSegmentsPerCell);
                 RegenCompute();
             }
             
@@ -180,8 +159,6 @@ namespace PlanetGen
         public void OnDestroy()
         {
             computePipeline?.Dispose();
-            // fieldGen?.Dispose();
-            // field_textures.Dispose();
         }
 
         #endregion
@@ -191,11 +168,10 @@ namespace PlanetGen
         void Init()
         {
             paramWatcher = new ParameterWatcher(this);
-            fieldGen = GetComponent<FieldGen2.FieldGen2>();
+            _fieldGenMain = GetComponent<FieldGen2.FieldGenMain>();
             
-            fieldGen.OnDataReady += ProcessFieldData;
+            _fieldGenMain.OnDataReady += ProcessFieldData;
             computePipeline = new ComputePipeline(this);
-            computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
 
             cpuSegments = new NativeList<float4>(Allocator.Persistent);
             cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
@@ -204,10 +180,10 @@ namespace PlanetGen
 
         void RegenField()
         {
-            fieldGen.ExternalProcess(0); //TODO implement seed
+            _fieldGenMain.ExternalProcess(0); //TODO implement seed
         }
 
-        void ProcessFieldData(FieldData2 fieldData)
+        void ProcessFieldData(FieldData fieldData)
         {
             
             _fieldData = fieldData;
@@ -218,16 +194,16 @@ namespace PlanetGen
                 return;
             }
             
-            if (!_fieldData.IsDataValid)
+            if (!_fieldData.IsValid)
             {
                 print("Field data is not valid, cannot regenerate field.");
                 return;
             }
             
             
-            computePipeline.Init(scalarFieldWidth, textureRes, gridResolution, maxSegmentsPerCell);
-            fieldRenderer.material.SetTexture("_FieldTex", _fieldData.ScalarFieldTexture);
-            fieldRenderer.material.SetTexture("_ColorTex", _fieldData.Colors);
+            computePipeline.Init(_fieldData.Size, textureRes, gridResolution, maxSegmentsPerCell);
+            fieldRenderer.material.SetTexture("_FieldTex", _fieldData.BaseTextureData.ScalarTex);
+            fieldRenderer.material.SetTexture("_ColorTex", _fieldData.BaseTextureData.ColorTex);
             fieldRenderer.material.SetInt("_Mode", fieldDisplayMode);
             fieldRenderer.material.SetFloat("_Alpha", fieldDisplayOpacity);
             fieldRenderer.enabled = enableFieldPreview;
@@ -238,9 +214,13 @@ namespace PlanetGen
 
         void RegenCompute()
         {
+            if (!_fieldData.IsValid)
+            {
+                throw new System.Exception("Field data is not valid, cannot regenerate compute pipeline.");
+            }
             
             
-            if (enableCPUMarchingSquares && _fieldData.IsDataValid)
+            if (enableCPUMarchingSquares && _fieldData.IsValid)
             {
                 var stopwatch = new Stopwatch();
                 // --- Step 1: Generate Segments ---
@@ -293,9 +273,9 @@ namespace PlanetGen
                 }
             }
 
-            computePipeline.Dispatch(_fieldData, gridResolution);
+            computePipeline.Dispatch(_fieldData.CreateDeformableVersion(), gridResolution);
 
-            resultRenderer.material.SetTexture("_ColorTexture", _fieldData.Colors);
+            resultRenderer.material.SetTexture("_ColorTexture", _fieldData.BaseTextureData.ColorTex);
             resultRenderer.material.SetTexture("_SDFTexture", computePipeline.JumpFloodSdfTexture);
             resultRenderer.material.SetTexture("_WarpedSDFTexture", computePipeline.WarpedSdfTexture);
             resultRenderer.material.SetTexture("_UDFTexture", computePipeline.SurfaceUdfTexture);
@@ -403,23 +383,6 @@ namespace PlanetGen
                     Debug.DrawLine(p1, p2, polylineDebugColor, debugLineDuration);
                 }
             }
-
-            // for (int polylineIndex = 0; polylineIndex < cpuPolylines.PolylineRanges.Length; polylineIndex++)
-            // {
-            //     var range = cpuPolylines.PolylineRanges[polylineIndex];
-            //     int startIndex = range.x;
-            //     int pointCount = range.y;
-            //
-            //     Debug.Log($"Polyline {polylineIndex}: {pointCount} points");
-            //
-            //     // // Print all points in this polyline
-            //     // for (int pointIndex = 0; pointIndex < pointCount; pointIndex++)
-            //     // {
-            //     //     int globalIndex = startIndex + pointIndex;
-            //     //     var point = cpuPolylines.AllPoints[globalIndex];
-            //     //     Debug.Log($"  Point {pointIndex}: ({point.x:F3}, {point.y:F3})");
-            //     // }
-            // }
         }
 
         private void DrawCPUSegments()
@@ -463,7 +426,7 @@ namespace PlanetGen
         /// <summary>
         /// Gets a reference to the current field data for brush operations.
         /// </summary>
-        public FieldData2 GetFieldData()
+        public FieldData GetFieldData()
         {
             return _fieldData;
         }
@@ -474,15 +437,17 @@ namespace PlanetGen
         /// </summary>
         public void UpdateFieldFromBrush()
         {
-            if (!_fieldData.IsDataValid)
+            if (!_fieldData.IsValid)
                 return;
         
             // Update GPU textures from the modified native arrays
             // fieldGen.UpdateGPUTextures(ref field_textures);
         
             // Update the field display
-            fieldRenderer.material.SetTexture("_FieldTex", _fieldData.ScalarFieldTexture);
-            fieldRenderer.material.SetTexture("_ColorTex", _fieldData.Colors);
+            // fieldRenderer.material.SetTexture("_FieldTex", _fieldData.ScalarTex);
+            fieldRenderer.material.SetTexture("_FieldTex", _fieldData.BaseTextureData.ScalarTex);
+            // fieldRenderer.material.SetTexture("_ColorTex", _fieldData.ColorTex);
+            fieldRenderer.material.SetTexture("_ColorTex", _fieldData.BaseTextureData.ColorTex);
         
             // Regenerate compute pipeline and marching squares
             RegenCompute();

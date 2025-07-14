@@ -129,28 +129,28 @@ namespace PlanetGen
         void ApplyBrush(Vector2 worldPosition, bool isBuilding)
         {
             var fieldData = planetGenMain.GetFieldData();
-            if (!fieldData.IsDataValid)
+            if (!fieldData.IsValid)
                 return;
             
             // Convert world position (-1 to 1) to texture coordinates (0 to width)
             Vector2 normalizedPos = (worldPosition + Vector2.one) * 0.5f;
-            Vector2 texturePos = normalizedPos * fieldData.Width;
+            Vector2 texturePos = normalizedPos * fieldData.Size;
             
             // Create brush job
             var brushJob = new SimpleBrushJob
             {
                 // FieldData = fieldData.ScalarFieldArray,
-                FieldData = fieldData.RasterData.Scalar,
-                Width = fieldData.Width,
+                FieldData = fieldData.BaseRasterData.Scalar,
+                Width = fieldData.Size,
                 BrushCenter = texturePos,
-                BrushRadius = brushRadius * fieldData.Width * 0.5f, // Convert to texture space
+                BrushRadius = brushRadius * fieldData.Size * 0.5f, // Convert to texture space
                 BrushStrength = brushStrength,
                 IsBuilding = isBuilding,
                 DeltaTime = Time.deltaTime
             };
             
             // Execute the job
-            JobHandle handle = brushJob.Schedule(fieldData.Width * fieldData.Width, 128);
+            JobHandle handle = brushJob.Schedule(fieldData.Size * fieldData.Size, 128);
             handle.Complete();
             
             isDirty = true;

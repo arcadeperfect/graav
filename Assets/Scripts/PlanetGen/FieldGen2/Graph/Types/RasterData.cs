@@ -1,6 +1,7 @@
 using PlanetGen.FieldGen;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace PlanetGen.FieldGen2.Graph
 {
@@ -12,6 +13,39 @@ namespace PlanetGen.FieldGen2.Graph
         public NativeArray<float> Angle;
 
         private readonly int _size;
+        
+        public bool IsValid => _isValid();
+        private bool _isValid()
+        {
+            var valid = true;
+
+            if (!Scalar.IsCreated)
+            {
+                Debug.LogWarning("RasterData: Scalar array is not created.");
+                valid = false;
+            }
+            if (!Color.IsCreated)
+            {
+                Debug.LogWarning("RasterData: Color array is not created.");
+                valid = false;
+            }
+            if (!Altitude.IsCreated)
+            {
+                Debug.LogWarning("RasterData: Altitude array is not created.");
+                valid = false;
+            }
+            if (!Angle.IsCreated)
+            {
+                Debug.LogWarning("RasterData: Angle array is not created.");
+                valid = false;
+            }
+            if (_size <= 0)
+            {
+                Debug.LogWarning("RasterData: Size is not positive.");
+                valid = false;
+            }
+            return valid;
+        }
 
         public RasterData(int size, Allocator allocator = Allocator.Persistent)
         {
