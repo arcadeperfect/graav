@@ -252,8 +252,7 @@ namespace PlanetGen.Compute
 
             var warpedSdfResults = _sdfDomainWarpPingPong.Dispatch(sdfInput);
 
-            if (WarpedSdfTexture != null && WarpedSdfTexture != warpedSdfResults.Textures["field"])
-                WarpedSdfTexture.Release();
+            
 
             WarpedSdfTexture = warpedSdfResults.Textures["field"];
         }
