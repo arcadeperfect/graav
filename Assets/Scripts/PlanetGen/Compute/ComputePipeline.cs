@@ -18,10 +18,9 @@ namespace PlanetGen.Compute
         private PingPongPipeline _sdfDomainWarpPingPong;
         private UdfFromSegments _udfGen;
 
-        private int markTilesKernel;
-        private int distanceFieldKernel;
-
-
+        private int _markTilesKernel;
+        private int _distanceFieldKernel;
+        
         public ComputeBuffer SegmentsBuffer { get; private set; }
         public ComputeBuffer SegmentColorsBuffer { get; private set; }
         public ComputeBuffer SegmentCountBuffer { get; private set; }
@@ -34,14 +33,6 @@ namespace PlanetGen.Compute
         private int _fieldResolution;
         private int _textureResolution;
         private bool _isInitialized = false;
-
-
-        // public ComputePipeline(PlanetGenMain parent)
-        // {
-        //     _parent = parent ?? throw new ArgumentNullException(nameof(parent));
-        //     LoadShaders();
-        //     CreatePipelineComponents();
-        // }
 
         public ComputePipeline(PlanetGenMain parent)
         {
@@ -82,17 +73,6 @@ namespace PlanetGen.Compute
             });
         }
 
-        // private void LoadShaders()
-        // {
-        //     _marchingSquaresShader = CSP.MarchingSquares.Get();
-        //     if (_marchingSquaresShader == null)
-        //         throw new InvalidOperationException("Failed to load MarchingSquares shader");
-        //
-        //     _marchingSquaresKernel = CSP.MarchingSquares.Kernels.MarchingSquares;
-        //     if (_marchingSquaresKernel < 0)
-        //         throw new InvalidOperationException("Failed to get MarchingSquares kernel");
-        // }
-
         private Result CreatePipelineComponents()
         {
             return ErrorHandler.TryExecute("ComputePipeline.CreategPipelineComponents", () =>
@@ -101,21 +81,7 @@ namespace PlanetGen.Compute
                 _udfGen = _resources.Track(new UdfFromSegments());
             });
         }
-
-        // private void CreatePipelineComponents()
-        // {
-        //     try
-        //     {
-        //         _jumpFlooder = _resources.Track(new JumpFlooder());
-        //         _udfGen = _resources.Track(new UdfFromSegments());
-        //     }
-        //     catch (Exception e)
-        //     {
-        //         Debug.LogError($"Failed to create pipeline components: {e.Message}");
-        //         throw;
-        //     }
-        // }
-
+        
         public Result Init(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
         {
             var validation =
@@ -157,40 +123,6 @@ namespace PlanetGen.Compute
 
             return initResult;
         }
-        // public void Init(int fieldWidth, int textureRes, int gridResolution, int maxSegmentsPerCell)
-        // {
-        //     if (fieldWidth <= 0) throw new ArgumentException("Field width must be positive", nameof(fieldWidth));
-        //     if (textureRes <= 0) throw new ArgumentException("Texture resolution must be positive", nameof(textureRes));
-        //     if (gridResolution <= 0)
-        //         throw new ArgumentException("Grid resolution must be positive", nameof(gridResolution));
-        //     if (maxSegmentsPerCell <= 0)
-        //         throw new ArgumentException("Max segments per cell must be positive", nameof(maxSegmentsPerCell));
-        //
-        //     _fieldResolution = fieldWidth;
-        //     _textureResolution = textureRes;
-        //
-        //     try
-        //     {
-        //         CreateBuffers(fieldWidth);
-        //         CreateTextures(textureRes);
-        //         InitializePipelines();
-        //         InitializeSubComponents(textureRes, gridResolution, maxSegmentsPerCell);
-        //
-        //         _isInitialized = true;
-        //
-        //         var counts = _resources.GetResourceCounts();
-        //         Debug.Log(
-        //             $"ComputePipeline initialized: {counts.buffers} buffers, {counts.textures} textures, {counts.disposables} other resources");
-        //     }
-        //     catch (Exception e)
-        //     {
-        //         Debug.LogError($"ComputePipeline initialization failed: {e.Message}");
-        //
-        //         ClearResources();
-        //         throw;
-        //     }
-        // }
-
         private void CreateBuffers(int fieldWidth)
         {
             int maxSegments = fieldWidth * fieldWidth * 2;

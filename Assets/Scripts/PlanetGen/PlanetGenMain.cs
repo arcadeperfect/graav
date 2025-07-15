@@ -16,7 +16,10 @@ namespace PlanetGen
     {
         #region Inspector
 
-        [Header("Dispplays")] [TriggerFieldRegen]
+        [TriggerComputeRegen]
+        public float WorldScale = 1f;
+        
+        [Header("Displays")] [TriggerFieldRegen]
         public bool enableFieldPreview = true;
 
         [TriggerComputeRegen] public bool enableSdfPreview = true;
@@ -94,29 +97,31 @@ namespace PlanetGen
 
         // Core systems
         private FieldGen2.FieldGenMain _fieldGenMain;
-        private ComputePipeline computePipeline;
-        private ParameterWatcher paramWatcher;
+        private ComputePipeline _computePipeline;
+        private ParameterWatcher _paramWatcher;
 
         public Renderer fieldRenderer;
         public Renderer sdfRenderer;
         public Renderer resultRenderer;
         public GameObject collidersObject;
-
+        
+        private Transform _resultTransform;
+        
         // Data management - proper ownership pattern
         private FieldData _baseFieldData;
         private DeformableFieldData _workingFieldData;
         private readonly object _dataLock = new object(); // Note: was Object, should be object
 
-        private NativeList<float4> cpuSegments;
-        private MarchingSquaresCPU.PolylineData cpuPolylines;
-        private NativeList<MarchingSquaresCPU.ColliderData> colliderData;
-        private List<EdgeCollider2D> cachedColliders = new List<EdgeCollider2D>();
+        private NativeList<float4> _cpuSegments;
+        private MarchingSquaresCPU.PolylineData _cpuPolylines;
+        private NativeList<MarchingSquaresCPU.ColliderData> _colliderData;
+        private List<EdgeCollider2D> _cachedColliders = new List<EdgeCollider2D>();
 
         // Performance tracking
-        private float lastCPUMarchingSquaresTime;
-        private int lastCPUSegmentCount;
-        private float lastPolylineGenerationTime;
-        private int lastPolylineCount;
+        private float _lastCPUMarchingSquaresTime;
+        private int _lastCPUSegmentCount;
+        private float _lastPolylineGenerationTime;
+        private int _lastPolylineCount;
 
         #endregion
 
@@ -129,14 +134,14 @@ namespace PlanetGen
 
         void Update()
         {
-            var changes = paramWatcher.CheckForChanges();
+            var changes = _paramWatcher.CheckForChanges();
 
             if (changes.HasFieldRegen())
             {
                 Debug.Log("[DEBUG] Field regen triggered");
                 // Use working data size if available, otherwise use a default
                 var size = _workingFieldData?.Size ?? 512;
-                var initResult = computePipeline.Init(size, textureRes, gridResolution, maxSegmentsPerCell);
+                var initResult = _computePipeline.Init(size, textureRes, gridResolution, maxSegmentsPerCell);
 
                 initResult.OnFailure(error =>
                     ErrorHandler.LogError("PlanetGenMain.Update", $"Failed to reinitialize pipeline: {error}"));
@@ -159,7 +164,7 @@ namespace PlanetGen
             {
                 Debug.Log("[DEBUG] Buffer reinit triggered");
                 var size = _workingFieldData?.Size ?? 512;
-                var initResult = computePipeline.Init(size, textureRes, gridResolution, maxSegmentsPerCell);
+                var initResult = _computePipeline.Init(size, textureRes, gridResolution, maxSegmentsPerCell);
 
                 initResult.OnFailure(error =>
                     ErrorHandler.LogError("PlanetGenMain.Update", $"Failed to reinitialize buffers: {error}"));
@@ -186,11 +191,11 @@ namespace PlanetGen
             }
 
             // Dispose native collections
-            if (cpuSegments.IsCreated) cpuSegments.Dispose();
-            if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-            if (colliderData.IsCreated) colliderData.Dispose();
+            if (_cpuSegments.IsCreated) _cpuSegments.Dispose();
+            if (_cpuPolylines.AllPoints.IsCreated) _cpuPolylines.Dispose();
+            if (_colliderData.IsCreated) _colliderData.Dispose();
 
-            computePipeline?.Dispose();
+            _computePipeline?.Dispose();
         }
 
         #endregion
@@ -199,15 +204,17 @@ namespace PlanetGen
 
         void Init()
         {
-            paramWatcher = new ParameterWatcher(this);
+            _resultTransform = resultRenderer.transform;
+            
+            _paramWatcher = new ParameterWatcher(this);
             _fieldGenMain = GetComponent<FieldGen2.FieldGenMain>();
 
             _fieldGenMain.OnDataReady += ProcessFieldData;
-            computePipeline = new ComputePipeline(this);
+            _computePipeline = new ComputePipeline(this);
 
-            cpuSegments = new NativeList<float4>(Allocator.Persistent);
-            cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
-            colliderData = new NativeList<MarchingSquaresCPU.ColliderData>(Allocator.Persistent);
+            _cpuSegments = new NativeList<float4>(Allocator.Persistent);
+            _cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
+            _colliderData = new NativeList<MarchingSquaresCPU.ColliderData>(Allocator.Persistent);
         }
 
         void RegenField()
@@ -260,7 +267,7 @@ namespace PlanetGen
 
             // Initialize compute pipeline with the working data
             var initResult =
-                computePipeline.Init(_workingFieldData.Size, textureRes, gridResolution, maxSegmentsPerCell);
+                _computePipeline.Init(_workingFieldData.Size, textureRes, gridResolution, maxSegmentsPerCell);
 
             Debug.Log($"[DEBUG] Compute pipeline init result: {initResult.IsSuccess}");
             if (!initResult.IsSuccess)
@@ -289,123 +296,8 @@ namespace PlanetGen
                 });
         }
 
-        // void RegenCompute()
-        // {
-        //     Debug.Log("[DEBUG] RegenCompute called");
-        //
-        //     if (_workingFieldData?.IsValid != true)
-        //     {
-        //         Debug.LogWarning("[DEBUG] RegenCompute: No valid working field data");
-        //         ErrorHandler.LogWarning("PlanetGenMain.RegenCompute",
-        //             "Cannot regenerate compute - no valid working field data");
-        //         return;
-        //     }
-        //
-        //     Debug.Log("[DEBUG] Working field data is valid, continuing...");
-        //
-        //     // Sync any pending terrain modifications to GPU texture
-        //     bool wasModified = _workingFieldData.SyncTextureIfDirty();
-        //     if (wasModified)
-        //     {
-        //         Debug.Log("[DEBUG] Terrain modifications synced to GPU");
-        //     }
-        //
-        //     // CPU Marching Squares - Re-enable this for colliders
-        //     if (enableCPUMarchingSquares)
-        //     {
-        //         Debug.Log("[DEBUG] Starting CPU marching squares");
-        //         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        //
-        //         // Generate segments
-        //         if (cpuSegments.IsCreated) cpuSegments.Clear();
-        //         var newSegments = MarchingSquaresCPU.GenerateSegmentsBurst(
-        //             _workingFieldData, marchingSquaresThreshold);
-        //
-        //         cpuSegments.AddRange(newSegments);
-        //         newSegments.Dispose();
-        //
-        //         lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
-        //         lastCPUSegmentCount = cpuSegments.Length;
-        //
-        //         Debug.Log($"[DEBUG] Generated {cpuSegments.Length} CPU segments in {lastCPUMarchingSquaresTime}ms");
-        //
-        //         // Generate polylines and colliders if needed
-        //         if (enablePolylineGeneration || createColliders)
-        //         {
-        //             Debug.Log("[DEBUG] Extracting polylines and colliders");
-        //             stopwatch.Restart();
-        //
-        //             // Dispose old polyline data
-        //             if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-        //             if (colliderData.IsCreated) colliderData.Dispose();
-        //
-        //             // Extract polylines with colliders in one pass
-        //             cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
-        //                 cpuSegments, out colliderData, 3, Allocator.Persistent); // Min 3 points for collider
-        //
-        //             lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
-        //             lastPolylineCount = cpuPolylines.PolylineRanges.Length;
-        //
-        //             Debug.Log(
-        //                 $"[DEBUG] Generated {lastPolylineCount} polylines and {colliderData.Length} colliders in {lastPolylineGenerationTime}ms");
-        //
-        //             // Update colliders if enabled
-        //             if (createColliders && colliderData.IsCreated && colliderData.Length > 0)
-        //             {
-        //                 Debug.Log("[DEBUG] Updating colliders from data");
-        //                 UpdateCollidersFromData();
-        //             }
-        //             else if (!createColliders)
-        //             {
-        //                 // Disable all colliders if creation is disabled
-        //                 Debug.Log("[DEBUG] Collider creation disabled, hiding existing colliders");
-        //                 foreach (var collider in cachedColliders)
-        //                 {
-        //                     if (collider != null) collider.enabled = false;
-        //                 }
-        //             }
-        //         }
-        //
-        //         stopwatch.Stop();
-        //     }
-        //     else
-        //     {
-        //         // If CPU marching squares is disabled, also disable colliders
-        //         Debug.Log("[DEBUG] CPU marching squares disabled, hiding colliders");
-        //         foreach (var collider in cachedColliders)
-        //         {
-        //             if (collider != null) collider.enabled = false;
-        //         }
-        //     }
-        //
-        //     Debug.Log("[DEBUG] About to dispatch compute pipeline");
-        //
-        //     // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
-        //     var dispatchResult = computePipeline.Dispatch(_workingFieldData, gridResolution);
-        //
-        //     Debug.Log($"[DEBUG] Dispatch result: {dispatchResult.IsSuccess}");
-        //     if (!dispatchResult.IsSuccess)
-        //     {
-        //         Debug.LogError($"[DEBUG] Dispatch failed: {dispatchResult.ErrorMessage}");
-        //     }
-        //
-        //     dispatchResult
-        //         .OnSuccess(() =>
-        //         {
-        //             Debug.Log("[DEBUG] Dispatch succeeded, updating material properties");
-        //             UpdateMaterialProperties();
-        //             Debug.Log("[DEBUG] Material properties updated");
-        //         })
-        //         .OnFailure(error =>
-        //         {
-        //             Debug.LogError($"[DEBUG] Dispatch failed in OnFailure: {error}");
-        //             ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
-        //         });
-        // }
         void RegenCompute()
         {
-            Debug.Log("[DEBUG] RegenCompute called");
-
             if (_workingFieldData?.IsValid != true)
             {
                 Debug.LogWarning("[DEBUG] RegenCompute: No valid working field data");
@@ -413,9 +305,7 @@ namespace PlanetGen
                     "Cannot regenerate compute - no valid working field data");
                 return;
             }
-
-            Debug.Log("[DEBUG] Working field data is valid, continuing...");
-
+            
             // Sync any pending terrain modifications to GPU texture
             bool wasModified = _workingFieldData.SyncTextureIfDirty();
             if (wasModified)
@@ -426,63 +316,56 @@ namespace PlanetGen
             // CPU Marching Squares - Re-enable this for colliders
             if (enableCPUMarchingSquares)
             {
-                Debug.Log("[DEBUG] Starting CPU marching squares");
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
                 // Generate segments
-                if (cpuSegments.IsCreated) cpuSegments.Clear();
+                if (_cpuSegments.IsCreated) _cpuSegments.Clear();
                 var newSegments = MarchingSquaresCPU.GenerateSegmentsBurst(
-                    _workingFieldData, marchingSquaresThreshold);
+                    _workingFieldData, marchingSquaresThreshold, WorldScale / 2f);
 
-                cpuSegments.AddRange(newSegments);
+                _cpuSegments.AddRange(newSegments.AsArray());
                 newSegments.Dispose();
 
-                lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
-                lastCPUSegmentCount = cpuSegments.Length;
-
-                Debug.Log($"[DEBUG] Generated {cpuSegments.Length} CPU segments in {lastCPUMarchingSquaresTime}ms");
+                _lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
+                _lastCPUSegmentCount = _cpuSegments.Length;
 
                 // Generate polylines and colliders if needed
                 if (enablePolylineGeneration || createColliders || (enableShapesRendering && shapesRenderer != null))
                 {
-                    Debug.Log("[DEBUG] Extracting polylines and colliders");
                     stopwatch.Restart();
 
                     // Dispose old polyline data
-                    if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-                    if (colliderData.IsCreated) colliderData.Dispose();
+                    if (_cpuPolylines.AllPoints.IsCreated) _cpuPolylines.Dispose();
+                    if (_colliderData.IsCreated) _colliderData.Dispose();
 
                     // Extract polylines with colliders in one pass
-                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
-                        cpuSegments, out colliderData, 3, Allocator.Persistent); // Min 3 points for collider
+                    _cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
+                        _cpuSegments, out _colliderData, 3, Allocator.Persistent); // Min 3 points for collider
 
-                    lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
-                    lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+                    _lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
+                    _lastPolylineCount = _cpuPolylines.PolylineRanges.Length;
 
                     Debug.Log(
-                        $"[DEBUG] Generated {lastPolylineCount} polylines and {colliderData.Length} colliders in {lastPolylineGenerationTime}ms");
+                        $"[DEBUG] Generated {_lastPolylineCount} polylines and {_colliderData.Length} colliders in {_lastPolylineGenerationTime}ms");
 
                     // Update Shapes renderer if enabled
                     if (enableShapesRendering && shapesRenderer != null)
                     {
-                        Debug.Log("[DEBUG] Updating Shapes polyline renderer");
                         Stopwatch sw = Stopwatch.StartNew();
-                        shapesRenderer.UpdatePolylines(colliderData, cpuPolylines);
+                        shapesRenderer.UpdatePolylines(_colliderData, _cpuPolylines);
                         sw.Stop();
-                        Debug.Log($"[DEBUG] Shapes polyline renderer updated in {sw.ElapsedMilliseconds}ms");gi
+                        Debug.Log($"[DEBUG] Shapes polyline renderer updated in {sw.ElapsedMilliseconds}ms");
                     }
 
                     // Update colliders if enabled
-                    if (createColliders && colliderData.IsCreated && colliderData.Length > 0)
+                    if (createColliders && _colliderData.IsCreated && _colliderData.Length > 0)
                     {
-                        Debug.Log("[DEBUG] Updating colliders from data");
                         UpdateCollidersFromData();
                     }
                     else if (!createColliders)
                     {
                         // Disable all colliders if creation is disabled
-                        Debug.Log("[DEBUG] Collider creation disabled, hiding existing colliders");
-                        foreach (var collider in cachedColliders)
+                        foreach (var collider in _cachedColliders)
                         {
                             if (collider != null) collider.enabled = false;
                         }
@@ -490,12 +373,12 @@ namespace PlanetGen
                 }
 
                 stopwatch.Stop();
+                
             }
             else
             {
                 // If CPU marching squares is disabled, also disable colliders and clear shapes
-                Debug.Log("[DEBUG] CPU marching squares disabled, hiding colliders and clearing shapes");
-                foreach (var collider in cachedColliders)
+                foreach (var collider in _cachedColliders)
                 {
                     if (collider != null) collider.enabled = false;
                 }
@@ -505,13 +388,10 @@ namespace PlanetGen
                     shapesRenderer.ClearPolylines();
                 }
             }
-
-            Debug.Log("[DEBUG] About to dispatch compute pipeline");
-
+            
             // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
-            var dispatchResult = computePipeline.Dispatch(_workingFieldData, gridResolution);
-
-            Debug.Log($"[DEBUG] Dispatch result: {dispatchResult.IsSuccess}");
+            var dispatchResult = _computePipeline.Dispatch(_workingFieldData, gridResolution);
+            
             if (!dispatchResult.IsSuccess)
             {
                 Debug.LogError($"[DEBUG] Dispatch failed: {dispatchResult.ErrorMessage}");
@@ -520,34 +400,34 @@ namespace PlanetGen
             dispatchResult
                 .OnSuccess(() =>
                 {
-                    Debug.Log("[DEBUG] Dispatch succeeded, updating material properties");
                     UpdateMaterialProperties();
-                    Debug.Log("[DEBUG] Material properties updated");
                 })
                 .OnFailure(error =>
                 {
                     Debug.LogError($"[DEBUG] Dispatch failed in OnFailure: {error}");
                     ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
                 });
+            
+            
+            _resultTransform.localScale = Vector3.one * WorldScale;
+            
         }
 
 
         private void UpdateMaterialProperties()
         {
-            Debug.Log("[DEBUG] UpdateMaterialProperties called");
-
             // Check if textures are valid before setting them
-            if (computePipeline.JumpFloodSdfTexture == null)
+            if (_computePipeline.JumpFloodSdfTexture == null)
             {
                 Debug.LogError("[DEBUG] JumpFloodSdfTexture is null!");
             }
 
-            if (computePipeline.WarpedSdfTexture == null)
+            if (_computePipeline.WarpedSdfTexture == null)
             {
                 Debug.LogError("[DEBUG] WarpedSdfTexture is null!");
             }
 
-            if (computePipeline.SurfaceUdfTexture == null)
+            if (_computePipeline.SurfaceUdfTexture == null)
             {
                 Debug.LogError("[DEBUG] SurfaceUdfTexture is null!");
             }
@@ -559,9 +439,9 @@ namespace PlanetGen
 
             // Use working data color texture (shared immutable)
             resultRenderer.material.SetTexture("_ColorTexture", _workingFieldData.ColorTexture);
-            resultRenderer.material.SetTexture("_SDFTexture", computePipeline.JumpFloodSdfTexture);
-            resultRenderer.material.SetTexture("_WarpedSDFTexture", computePipeline.WarpedSdfTexture);
-            resultRenderer.material.SetTexture("_UDFTexture", computePipeline.SurfaceUdfTexture);
+            resultRenderer.material.SetTexture("_SDFTexture", _computePipeline.JumpFloodSdfTexture);
+            resultRenderer.material.SetTexture("_WarpedSDFTexture", _computePipeline.WarpedSdfTexture);
+            resultRenderer.material.SetTexture("_UDFTexture", _computePipeline.SurfaceUdfTexture);
 
             resultRenderer.material.SetFloat("_LineWidth", lineWidth * 0.01f);
             resultRenderer.material.SetFloat("_BandLineWidth", lineWidth * 0.01f);
@@ -570,37 +450,33 @@ namespace PlanetGen
             resultRenderer.material.SetFloat("_BandInterval", bandInterval);
             resultRenderer.material.SetFloat("_SurfaceBrightness", 1);
             resultRenderer.material.SetFloat("_BandBrightness", 0.5f);
-
-            Debug.Log($"[DEBUG] About to enable resultRenderer, renderActive = {renderActive}");
+            
             resultRenderer.enabled = renderActive;
 
-            sdfRenderer.material.SetTexture("_SDFTex", computePipeline.SurfaceUdfTexture);
+            sdfRenderer.material.SetTexture("_SDFTex", _computePipeline.SurfaceUdfTexture);
             sdfRenderer.material.SetInt("_Mode", sdfDisplayMode);
             sdfRenderer.material.SetFloat("_Alpha", sdfDisplayOpacity);
             sdfRenderer.material.SetFloat("_Mult", sdfDisplayMult);
-            Debug.Log($"[DEBUG] About to enable sdfRenderer, enableSdfPreview = {enableSdfPreview}");
             sdfRenderer.enabled = enableSdfPreview;
-
-            Debug.Log("[DEBUG] UpdateMaterialProperties completed");
         }
 
         private void UpdateCollidersFromData()
         {
             // Disable excess colliders
-            for (int i = colliderData.Length; i < cachedColliders.Count; i++)
+            for (int i = _colliderData.Length; i < _cachedColliders.Count; i++)
             {
-                if (cachedColliders[i] != null) cachedColliders[i].enabled = false;
+                if (_cachedColliders[i]) _cachedColliders[i].enabled = false;
             }
 
             // Update/create colliders from data
-            for (int i = 0; i < colliderData.Length; i++)
+            for (int i = 0; i < _colliderData.Length; i++)
             {
-                var data = colliderData[i];
+                var data = _colliderData[i];
 
                 EdgeCollider2D collider;
-                if (i < cachedColliders.Count)
+                if (i < _cachedColliders.Count)
                 {
-                    collider = cachedColliders[i];
+                    collider = _cachedColliders[i];
                     collider.enabled = true;
                 }
                 else
@@ -608,7 +484,7 @@ namespace PlanetGen
                     var go = new GameObject($"Collider_{i}");
                     go.transform.SetParent(collidersObject.transform);
                     collider = go.AddComponent<EdgeCollider2D>();
-                    cachedColliders.Add(collider);
+                    _cachedColliders.Add(collider);
                 }
 
                 // Set properties
@@ -619,7 +495,7 @@ namespace PlanetGen
                 var points = new Vector2[data.PointCount];
                 for (int j = 0; j < data.PointCount; j++)
                 {
-                    var point = cpuPolylines.AllPoints[data.StartIndex + j];
+                    var point = _cpuPolylines.AllPoints[data.StartIndex + j];
                     points[j] = new Vector2(point.x, point.y);
                 }
 
@@ -633,18 +509,18 @@ namespace PlanetGen
 
         public void DebugDraw()
         {
-            if (showCPUSegments && cpuSegments.IsCreated)
+            if (showCPUSegments && _cpuSegments.IsCreated)
             {
                 DrawCPUSegments();
             }
 
-            if (showCPUPolylines && cpuPolylines.AllPoints.IsCreated)
+            if (showCPUPolylines && _cpuPolylines.AllPoints.IsCreated)
             {
                 DrawCPUPolylines();
             }
 
-            if (showGPUSegments && computePipeline?.SegmentsBuffer != null &&
-                computePipeline?.SegmentCountBuffer != null)
+            if (showGPUSegments && _computePipeline?.SegmentsBuffer != null &&
+                _computePipeline?.SegmentCountBuffer != null)
             {
                 DrawGPUMarchingSquares();
             }
@@ -652,16 +528,16 @@ namespace PlanetGen
 
         private void DrawCPUPolylines()
         {
-            for (int i = 0; i < cpuPolylines.PolylineRanges.Length; i++)
+            for (int i = 0; i < _cpuPolylines.PolylineRanges.Length; i++)
             {
-                var range = cpuPolylines.PolylineRanges[i];
+                var range = _cpuPolylines.PolylineRanges[i];
                 int startIdx = range.x;
                 int pointCount = range.y;
 
                 for (int j = 0; j < pointCount - 1; j++)
                 {
-                    float2 p1_f2 = cpuPolylines.AllPoints[startIdx + j];
-                    float2 p2_f2 = cpuPolylines.AllPoints[startIdx + j + 1];
+                    float2 p1_f2 = _cpuPolylines.AllPoints[startIdx + j];
+                    float2 p2_f2 = _cpuPolylines.AllPoints[startIdx + j + 1];
 
                     Vector3 p1 = transform.TransformPoint(new Vector3(p1_f2.x, p1_f2.y, 0));
                     Vector3 p2 = transform.TransformPoint(new Vector3(p2_f2.x, p2_f2.y, 0));
@@ -673,10 +549,10 @@ namespace PlanetGen
 
         private void DrawCPUSegments()
         {
-            int actualSegmentCount = Mathf.Min(cpuSegments.Length, maxDebugSegments);
+            int actualSegmentCount = Mathf.Min(_cpuSegments.Length, maxDebugSegments);
             for (int i = 0; i < actualSegmentCount; i++)
             {
-                float4 segment = cpuSegments[i];
+                float4 segment = _cpuSegments[i];
                 Vector3 start = transform.TransformPoint(new Vector3(segment.x, segment.y, 0f));
                 Vector3 end = transform.TransformPoint(new Vector3(segment.z, segment.w, 0f));
                 Debug.DrawLine(start, end, cpuDebugLineColor, debugLineDuration);
@@ -686,13 +562,13 @@ namespace PlanetGen
         private void DrawGPUMarchingSquares()
         {
             int[] segmentCount = new int[1];
-            computePipeline.SegmentCountBuffer.GetData(segmentCount);
+            _computePipeline.SegmentCountBuffer.GetData(segmentCount);
             int actualSegmentCount = Mathf.Min(segmentCount[0], maxDebugSegments);
 
             if (actualSegmentCount <= 0) return;
 
             Vector4[] segments = new Vector4[actualSegmentCount];
-            computePipeline.SegmentsBuffer.GetData(segments, 0, 0, actualSegmentCount);
+            _computePipeline.SegmentsBuffer.GetData(segments, 0, 0, actualSegmentCount);
 
             for (int i = 0; i < actualSegmentCount; i++)
             {
