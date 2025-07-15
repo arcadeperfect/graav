@@ -105,25 +105,25 @@ namespace PlanetGen.Core
     public static class PipelineValidators
     {
         public static ValidationResult ValidateComputePipelineInit(
-            int fieldWidth,
+            int fieldRes,
             int textureRes,
-            int gridResolution,
+            int gridRes,
             int maxSegmentsPerCell)
         {
             return ParameterValidator.Create()
-                .ValidatePositive(fieldWidth, nameof(fieldWidth))
+                .ValidatePositive(fieldRes, nameof(fieldRes))
                 .ValidatePositive(textureRes, nameof(textureRes))
                 .ValidatePowerOfTwo(textureRes, nameof(textureRes))
-                .ValidatePositive(gridResolution, nameof(gridResolution))
+                .ValidatePositive(gridRes, nameof(gridRes))
                 .ValidatePositive(maxSegmentsPerCell, nameof(maxSegmentsPerCell))
-                .ValidateCustom(gridResolution <= textureRes,
-                    "Grid resolution cannot exceed texture resolution")
-                .ValidateCustom(fieldWidth <= textureRes * 4,
-                    "Field width should not exceed 4x texture resolution")
-                .WarnIf(textureRes > 2048,
-                    "Large texture resolutions may impact performance")
-                .WarnIf(maxSegmentsPerCell > 128,
-                    "High segment count per cell may impact performance")
+                // .ValidateCustom(gridRes <= textureRes,
+                //     "Grid resolution cannot exceed texture resolution")
+                // .ValidateCustom(fieldRes <= textureRes * 4,
+                //     "Field width should not exceed 4x texture resolution")
+                // .WarnIf(textureRes > 2048,
+                //     "Large texture resolutions may impact performance")
+                // .WarnIf(maxSegmentsPerCell > 128,
+                //     "High segment count per cell may impact performance")
                 .Build();
         }
 

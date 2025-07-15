@@ -32,8 +32,8 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 1.24
-  amplitude: 1
+  frequency: 10.64
+  amplitude: 9.2
   seed: 12331.1
   octaves: 4
   lacunarity: 2
@@ -139,7 +139,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 0.66
+  deformationAmplitude: 1.03
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -214,7 +214,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 0
+  warpStrength: 28.25
 --- !u!114 &-1891964609331708947
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -273,9 +273,9 @@ MonoBehaviour:
   - {fileID: -6240837201335320975}
   - {fileID: -7063200831616992041}
   - {fileID: 1277561118898541402}
-  - {fileID: -6735227374477596016}
-  - {fileID: -6709080615956600172}
   - {fileID: -1891964609331708947}
+  - {fileID: -6709080615956600172}
+  - {fileID: -6735227374477596016}
   globalContribution: 1
   gobalSeed: 0
 --- !u!114 &1277561118898541402

@@ -94,6 +94,9 @@ namespace PlanetGen.FieldGen2
 
         #region Inspector parameters
 
+        [TriggerFieldRegen] [TriggerMaskRegen]
+        public int fieldRes = 512;
+        
         [Header("Sequential Vector Processing")]
         [ListDrawerSettings(ShowIndexLabels = true, DraggableItems = true)]
         [TriggerMaskRegen]
@@ -104,8 +107,8 @@ namespace PlanetGen.FieldGen2
 
         [TriggerFieldRegen] public float circleRadius = 0.5f;
 
-        [Header("Dominance Mask Generation")] [TriggerFieldRegen] [TriggerMaskRegen]
-        public int textureSize = 512;
+        [Header("Dominance Mask Generation")] 
+
 
 
         [Range(0.1f, 10f)] [Tooltip("Frequency of the noise patterns for dominance.")] [TriggerMaskRegen]
@@ -168,7 +171,7 @@ namespace PlanetGen.FieldGen2
 
         public bool HasVectorVectorData => hasVectorResult;
         public bool HasRasterData => hasRasterData;
-        public int CurrentRasterSize => textureSize;
+        public int CurrentRasterSize => fieldRes;
 
         private FieldData FieldData;
 
@@ -362,13 +365,13 @@ namespace PlanetGen.FieldGen2
             var paramValidation = ParameterValidator.Create()
                 .ValidatePositive(circleVertexCount, nameof(circleVertexCount))
                 .ValidatePositive(circleRadius, nameof(circleRadius))
-                .ValidatePositive(textureSize, nameof(textureSize))
-                .ValidatePowerOfTwo(textureSize, nameof(textureSize))
+                .ValidatePositive(fieldRes, nameof(fieldRes))
+                .ValidatePowerOfTwo(fieldRes, nameof(fieldRes))
                 .ValidatePositive(dominanceNoiseFrequency, nameof(dominanceNoiseFrequency))
                 .ValidatePositive(dominanceSharpness, nameof(dominanceSharpness))
                 .ValidateRange(circleVertexCount, 3, 1000, nameof(circleVertexCount))
                 .ValidateRange(circleRadius, 0.01f, 10f, nameof(circleRadius))
-                .WarnIf(textureSize > 2048, "Large texture sizes may impact performance")
+                .WarnIf(fieldRes > 2048, "Large texture sizes may impact performance")
                 .WarnIf(circleVertexCount > 256, "High vertex count may impact performance")
                 .Build();
 
@@ -434,7 +437,7 @@ namespace PlanetGen.FieldGen2
                     if (graphLayers == null || graphLayers.Count == 0)
                         throw new InvalidOperationException("No graph layers defined for weight mask regeneration");
 
-                    WeightMask.GenerateWeightMasks(graphLayers, textureSize, dominanceMasterSeed,
+                    WeightMask.GenerateWeightMasks(graphLayers, fieldRes, dominanceMasterSeed,
                         dominanceNoiseFrequency, dominanceSharpness);
                     maskRegenQueued = false;
 
@@ -500,13 +503,13 @@ namespace PlanetGen.FieldGen2
                         }
 
                         // Validate weight mask
-                        if (!layer.weightMask.IsCreated || layer.weightMask.Length != textureSize * textureSize)
+                        if (!layer.weightMask.IsCreated || layer.weightMask.Length != fieldRes * fieldRes)
                         {
                             ErrorHandler.LogWarning("FieldGenMain.ProcessSequentialGraphs",
                                 $"Weight mask for layer {i} invalid, using equal weights");
 
                             if (layer.weightMask.IsCreated) layer.weightMask.Dispose();
-                            layer.weightMask = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
+                            layer.weightMask = new NativeArray<float>(fieldRes * fieldRes, Allocator.Persistent);
                             float equalWeight = 1f / graphLayers.Count;
                             for (int j = 0; j < layer.weightMask.Length; j++)
                                 layer.weightMask[j] = equalWeight;
@@ -545,9 +548,9 @@ namespace PlanetGen.FieldGen2
                 }
 
                 // Process raster stages
-                currentRaster = new RasterData(textureSize, Allocator.Persistent);
+                currentRaster = new RasterData(fieldRes, Allocator.Persistent);
                 rasterizeJobHandle =
-                    GPUVectorRasterizer.RasterizeVector(currentVectorResult, textureSize, 1f, ref currentRaster);
+                    GPUVectorRasterizer.RasterizeVector(currentVectorResult, fieldRes, 1f, ref currentRaster);
                 rasterizeJobHandle.Complete();
                 hasRasterData = true;
 
@@ -564,13 +567,13 @@ namespace PlanetGen.FieldGen2
                         }
 
                         // Validate weight mask (same check as vector processing)
-                        if (!layer.weightMask.IsCreated || layer.weightMask.Length != textureSize * textureSize)
+                        if (!layer.weightMask.IsCreated || layer.weightMask.Length != fieldRes * fieldRes)
                         {
                             ErrorHandler.LogWarning("FieldGenMain.ProcessSequentialGraphs",
                                 $"Weight mask for layer {i} invalid for raster processing, using equal weights");
 
                             if (layer.weightMask.IsCreated) layer.weightMask.Dispose();
-                            layer.weightMask = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
+                            layer.weightMask = new NativeArray<float>(fieldRes * fieldRes, Allocator.Persistent);
                             float equalWeight = 1f / graphLayers.Count;
                             for (int j = 0; j < layer.weightMask.Length; j++)
                                 layer.weightMask[j] = equalWeight;
@@ -599,7 +602,7 @@ namespace PlanetGen.FieldGen2
                     var oldFieldData = FieldData;
 
                     // Create new FieldData - this takes ownership of currentRaster and currentVector
-                    FieldData = new FieldData(textureSize, currentRaster, currentVector);
+                    FieldData = new FieldData(fieldRes, currentRaster, currentVector);
 
                     // Now it's safe to dispose the old FieldData
                     oldFieldData?.Dispose();
@@ -633,10 +636,10 @@ namespace PlanetGen.FieldGen2
                 throw new InvalidOperationException("No RasterOutputNode found in graph");
 
             graph.SetRasterInput(inputRaster);
-            graph.SetMaskInput(weightMask, textureSize);
+            graph.SetMaskInput(weightMask, fieldRes);
             graph.SetSeed(seed);
 
-            var outputRaster = new RasterData(textureSize, Allocator.Persistent);
+            var outputRaster = new RasterData(fieldRes, Allocator.Persistent);
             var tempBuffers = new TempBufferManager(true);
 
             JobHandle rasterHandle = default;
@@ -644,7 +647,7 @@ namespace PlanetGen.FieldGen2
             try
             {
                 rasterHandle =
-                    outputNode.SchedulePlanetData(new JobHandle(), textureSize, tempBuffers, ref outputRaster);
+                    outputNode.SchedulePlanetData(new JobHandle(), fieldRes, tempBuffers, ref outputRaster);
                 rasterHandle.Complete();
                 return outputRaster;
             }
@@ -689,7 +692,7 @@ namespace PlanetGen.FieldGen2
 
 
             graph.SetVectorInput(inputVector);
-            graph.SetMaskInput(weightMask, textureSize);
+            graph.SetMaskInput(weightMask, fieldRes);
             graph.SetSeed(seed);
 
 
@@ -701,7 +704,7 @@ namespace PlanetGen.FieldGen2
             try
             {
                 vectorHandle =
-                    vectorOutputNode.ScheduleVector(new JobHandle(), textureSize, tempBuffers, ref outputVector);
+                    vectorOutputNode.ScheduleVector(new JobHandle(), fieldRes, tempBuffers, ref outputVector);
 
 
                 vectorHandle.Complete();

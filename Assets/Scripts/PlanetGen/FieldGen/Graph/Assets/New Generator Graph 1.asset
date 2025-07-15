@@ -159,7 +159,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 7.02
+  warpStrength: 1.25
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

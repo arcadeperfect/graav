@@ -271,6 +271,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 723e7b6159e994d09b9d0bf2540a43c4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  fieldRes: 512
   graphLayers:
   - graph: {fileID: 11400000, guid: a58b7e615a6ad4b5facca7b291b934d6, type: 2}
     baseWeight: 1
@@ -282,7 +283,6 @@ MonoBehaviour:
     seed: 0
   circleVertexCount: 64
   circleRadius: 0.5
-  textureSize: 512
   dominanceNoiseFrequency: 2
   dominanceSharpness: 20
   dominanceMasterSeed: 123
@@ -297,7 +297,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 256626947}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2ddc6815d65248f8a45dce9dcdb130f5, type: 3}
   m_Name: 
@@ -310,6 +310,7 @@ MonoBehaviour:
   showBrushCursor: 1
   brushCursorMaterial: {fileID: 2100000, guid: 8b1d2fdf52a21448d88c84e62d1cbe8e, type: 2}
   updatesPerSecond: 60
+  enableDebugLogging: 1
 --- !u!114 &256626950
 MonoBehaviour:
   m_ObjectHideFlags: 0
