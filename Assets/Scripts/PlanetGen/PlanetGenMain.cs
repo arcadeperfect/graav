@@ -285,57 +285,7 @@ namespace PlanetGen
                     DisableRendering();
                 });
         }
-
-        // void RegenCompute()
-        // {
-        //     Debug.Log("[DEBUG] RegenCompute called");
-        //
-        //     if (_workingFieldData?.IsValid != true)
-        //     {
-        //         Debug.LogWarning("[DEBUG] RegenCompute: No valid working field data");
-        //         ErrorHandler.LogWarning("PlanetGenMain.RegenCompute",
-        //             "Cannot regenerate compute - no valid working field data");
-        //         return;
-        //     }
-        //
-        //     Debug.Log("[DEBUG] Working field data is valid, continuing...");
-        //     
-        //     
-        //
-        //     // Sync any pending terrain modifications to GPU texture
-        //     bool wasModified = _workingFieldData.SyncTextureIfDirty();
-        //     if (wasModified)
-        //     {
-        //         Debug.Log("[DEBUG] Terrain modifications synced to GPU");
-        //     }
-        //
-        //     // Skip CPU marching squares for now to isolate the issue
-        //     Debug.Log("[DEBUG] About to dispatch compute pipeline");
-        //
-        //     // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
-        //     var dispatchResult = computePipeline.Dispatch(_workingFieldData, gridResolution);
-        //
-        //     Debug.Log($"[DEBUG] Dispatch result: {dispatchResult.IsSuccess}");
-        //     if (!dispatchResult.IsSuccess)
-        //     {
-        //         Debug.LogError($"[DEBUG] Dispatch failed: {dispatchResult.ErrorMessage}");
-        //     }
-        //
-        //     dispatchResult
-        //         .OnSuccess(() =>
-        //         {
-        //             Debug.Log("[DEBUG] Dispatch succeeded, updating material properties");
-        //             // Update material properties only if dispatch succeeded
-        //             UpdateMaterialProperties();
-        //             Debug.Log("[DEBUG] Material properties updated");
-        //         })
-        //         .OnFailure(error =>
-        //         {
-        //             Debug.LogError($"[DEBUG] Dispatch failed in OnFailure: {error}");
-        //             ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
-        //         });
-        // }
-
+        
         void RegenCompute()
         {
             Debug.Log("[DEBUG] RegenCompute called");

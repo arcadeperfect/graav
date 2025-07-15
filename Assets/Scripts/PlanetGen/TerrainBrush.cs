@@ -10,6 +10,7 @@ namespace PlanetGen
     /// <summary>
     /// Simple, performant terrain brush for continuous digging and building.
     /// Astroneer-style terrain deformation with just radius and strength controls.
+    /// Updated to work with the new DeformableFieldData architecture.
     /// </summary>
     public class TerrainBrush : MonoBehaviour
     {
@@ -33,13 +34,15 @@ namespace PlanetGen
         [Range(10, 120)]
         public int updatesPerSecond = 60;
         
+        [Header("Debug")]
+        public bool enableDebugLogging = true;
+        
         // Private members
         private PlanetGenMain planetGenMain;
         private Camera mainCamera;
         private LineRenderer brushCursor;
         private Vector2 lastBrushPosition;
         private float lastUpdateTime;
-        private bool isDirty;
         
         // Cursor circle
         private const int CIRCLE_SEGMENTS = 24;
@@ -56,6 +59,8 @@ namespace PlanetGen
                 enabled = false;
                 return;
             }
+            
+            Debug.Log("[TerrainBrush] Initialized successfully");
             
             // Enable input actions
             if (digAction != null) digAction.action.Enable();
@@ -77,13 +82,6 @@ namespace PlanetGen
         {
             HandleInput();
             UpdateBrushCursor();
-            
-            // Update terrain if we made changes
-            if (isDirty)
-            {
-                planetGenMain.UpdateFieldFromBrush();
-                isDirty = false;
-            }
         }
         
         void HandleInput()
@@ -94,12 +92,22 @@ namespace PlanetGen
             if (!isDigging && !isBuilding)
                 return;
             
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[TerrainBrush] Input detected - Digging: {isDigging}, Building: {isBuilding}");
+            }
+            
             // Throttle updates for performance
             float timeSinceUpdate = Time.time - lastUpdateTime;
             if (timeSinceUpdate < 1f / updatesPerSecond)
                 return;
             
             Vector2 mouseWorldPos = GetMouseWorldPosition();
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[TerrainBrush] Mouse world position: {mouseWorldPos}");
+            }
             
             // Apply continuous brushing
             if (isDigging)
@@ -128,32 +136,132 @@ namespace PlanetGen
         
         void ApplyBrush(Vector2 worldPosition, bool isBuilding)
         {
-            var fieldData = planetGenMain.GetFieldData();
-            if (!fieldData.IsValid)
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[TerrainBrush] ApplyBrush called - Position: {worldPosition}, Building: {isBuilding}");
+            }
+            
+            // Get the working field data (mutable version)
+            var workingFieldData = planetGenMain.GetWorkingFieldData();
+            if (workingFieldData?.IsValid != true)
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.LogWarning($"[TerrainBrush] No valid working field data available. WorkingFieldData is null: {workingFieldData == null}");
+                    if (workingFieldData != null)
+                    {
+                        Debug.LogWarning($"[TerrainBrush] Working field data IsValid: {workingFieldData.IsValid}");
+                    }
+                }
                 return;
+            }
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[TerrainBrush] Working field data obtained - Size: {workingFieldData.Size}");
+            }
             
             // Convert world position (-1 to 1) to texture coordinates (0 to width)
             Vector2 normalizedPos = (worldPosition + Vector2.one) * 0.5f;
-            Vector2 texturePos = normalizedPos * fieldData.Size;
+            Vector2 texturePos = normalizedPos * workingFieldData.Size;
+            int2 center = new int2((int)texturePos.x, (int)texturePos.y);
             
-            // Create brush job
-            var brushJob = new SimpleBrushJob
+            // Convert brush radius to texture space
+            float radiusInTexels = brushRadius * workingFieldData.Size * 0.5f;
+            
+            // Calculate strength based on delta time for frame-rate independent brushing
+            float frameStrength = brushStrength * Time.deltaTime;
+            
+            if (enableDebugLogging)
             {
-                // FieldData = fieldData.ScalarFieldArray,
-                FieldData = fieldData.BaseRasterData.Scalar,
-                Width = fieldData.Size,
-                BrushCenter = texturePos,
-                BrushRadius = brushRadius * fieldData.Size * 0.5f, // Convert to texture space
-                BrushStrength = brushStrength,
-                IsBuilding = isBuilding,
-                DeltaTime = Time.deltaTime
-            };
+                Debug.Log($"[TerrainBrush] Deformation params - Center: {center}, Radius: {radiusInTexels}, Strength: {frameStrength}");
+                
+                // Check if center is within bounds
+                bool inBounds = center.x >= 0 && center.x < workingFieldData.Size && 
+                               center.y >= 0 && center.y < workingFieldData.Size;
+                Debug.Log($"[TerrainBrush] Center in bounds: {inBounds}");
+            }
             
-            // Execute the job
-            JobHandle handle = brushJob.Schedule(fieldData.Size * fieldData.Size, 128);
-            handle.Complete();
+            // Sample multiple values before deformation to see the area
+            float valueBefore = 0f;
+            float[] sampleValuesBefore = new float[9];
+            int sampleIndex = 0;
             
-            isDirty = true;
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int sampleX = center.x + dx;
+                    int sampleY = center.y + dy;
+                    
+                    if (sampleX >= 0 && sampleX < workingFieldData.Size && 
+                        sampleY >= 0 && sampleY < workingFieldData.Size)
+                    {
+                        int index = sampleY * workingFieldData.Size + sampleX;
+                        if (index >= 0 && index < workingFieldData.ModifiedScalarField.Length)
+                        {
+                            sampleValuesBefore[sampleIndex] = workingFieldData.ModifiedScalarField[index];
+                            if (dx == 0 && dy == 0) valueBefore = sampleValuesBefore[sampleIndex];
+                        }
+                    }
+                    sampleIndex++;
+                }
+            }
+            
+            // Use the built-in deformation method
+            workingFieldData.DeformTerrain(center, radiusInTexels, frameStrength, isBuilding);
+            
+            // Sample values after deformation
+            float valueAfter = 0f;
+            float[] sampleValuesAfter = new float[9];
+            sampleIndex = 0;
+            bool anyChange = false;
+            
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int sampleX = center.x + dx;
+                    int sampleY = center.y + dy;
+                    
+                    if (sampleX >= 0 && sampleX < workingFieldData.Size && 
+                        sampleY >= 0 && sampleY < workingFieldData.Size)
+                    {
+                        int index = sampleY * workingFieldData.Size + sampleX;
+                        if (index >= 0 && index < workingFieldData.ModifiedScalarField.Length)
+                        {
+                            sampleValuesAfter[sampleIndex] = workingFieldData.ModifiedScalarField[index];
+                            if (dx == 0 && dy == 0) valueAfter = sampleValuesAfter[sampleIndex];
+                            
+                            if (Mathf.Abs(sampleValuesAfter[sampleIndex] - sampleValuesBefore[sampleIndex]) > 0.001f)
+                            {
+                                anyChange = true;
+                            }
+                        }
+                    }
+                    sampleIndex++;
+                }
+            }
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[TerrainBrush] Center value change - Before: {valueBefore:F3}, After: {valueAfter:F3}, Delta: {valueAfter - valueBefore:F3}");
+                Debug.Log($"[TerrainBrush] Any change detected in 3x3 area: {anyChange}");
+                
+                if (!anyChange)
+                {
+                    Debug.LogWarning($"[TerrainBrush] NO CHANGES DETECTED! This might indicate an issue with the deformation logic.");
+                    Debug.LogWarning($"[TerrainBrush] Brush params were - Radius: {radiusInTexels:F1}, Strength: {frameStrength:F3}, Building: {isBuilding}");
+                }
+            }
+            
+            // Force an immediate update to see if the system responds
+            planetGenMain.UpdateFieldFromBrush();
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log("[TerrainBrush] Called UpdateFieldFromBrush()");
+            }
         }
         
         void SetupBrushCursor()
@@ -208,55 +316,6 @@ namespace PlanetGen
                 brushCursor.material.color = Color.green;
             else
                 brushCursor.material.color = Color.white;
-        }
-        
-        [BurstCompile(CompileSynchronously = true)]
-        struct SimpleBrushJob : IJobParallelFor
-        {
-            public NativeArray<float> FieldData;
-            [ReadOnly] public int Width;
-            [ReadOnly] public float2 BrushCenter;
-            [ReadOnly] public float BrushRadius;
-            [ReadOnly] public float BrushStrength;
-            [ReadOnly] public bool IsBuilding;
-            [ReadOnly] public float DeltaTime;
-            
-            public void Execute(int index)
-            {
-                int x = index % Width;
-                int y = index / Width;
-                
-                float2 pixelPos = new float2(x, y);
-                float distance = math.distance(pixelPos, BrushCenter);
-                
-                // Skip if outside brush radius
-                if (distance > BrushRadius)
-                    return;
-                
-                // Calculate smooth falloff
-                float normalizedDistance = distance / BrushRadius;
-                float falloff = 1f - normalizedDistance;
-                falloff = falloff * falloff; // Smooth curve
-                
-                // Calculate change amount
-                float changeAmount = BrushStrength * falloff * DeltaTime;
-                
-                float currentValue = FieldData[index];
-                float newValue;
-                
-                if (IsBuilding)
-                {
-                    // Add material (build up)
-                    newValue = math.min(currentValue + changeAmount, 1f);
-                }
-                else
-                {
-                    // Remove material (dig)
-                    newValue = math.max(currentValue - changeAmount, 0f);
-                }
-                
-                FieldData[index] = newValue;
-            }
         }
     }
 }

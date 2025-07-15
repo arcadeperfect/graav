@@ -274,11 +274,11 @@ MonoBehaviour:
   graphLayers:
   - graph: {fileID: 11400000, guid: a58b7e615a6ad4b5facca7b291b934d6, type: 2}
     baseWeight: 1
-    weightSeed: 0
+    weightSeed: 231
     seed: 0
   - graph: {fileID: 11400000, guid: d9534348a79014f55b58ed42d1faa292, type: 2}
     baseWeight: 1
-    weightSeed: 0
+    weightSeed: 409
     seed: 0
   circleVertexCount: 64
   circleRadius: 0.5
@@ -328,9 +328,9 @@ MonoBehaviour:
   enableDebugDraw: 0
   fieldDisplayMode: 0
   fieldDisplayOpacity: 1
-  enableCPUMarchingSquares: 0
-  enablePolylineGeneration: 0
-  createColliders: 0
+  enableCPUMarchingSquares: 1
+  enablePolylineGeneration: 1
+  createColliders: 1
   colliderMaterial: {fileID: 0}
   colliderThickness: 0.1
   marchingSquaresThreshold: 0.5

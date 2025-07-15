@@ -139,7 +139,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: -0.05
+  deformationAmplitude: 0.66
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -247,7 +247,7 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 4.11
+  frequency: 6.66
   amplitude: 0.12
   seed: 12345
   octaves: 4

@@ -3,8 +3,6 @@ using NUnit.Framework;
 using PlanetGen.FieldGen2.Graph;
 using PlanetGen.FieldGen2.Graph.Types;
 using Unity.Collections;
-
-
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -13,6 +11,8 @@ namespace PlanetGen.FieldGen2.Types
     public class FieldData : IDisposable
     {
         public RasterData BaseRasterData { get; }
+
+        // private RasterData BaseRasterData { get; }
         public VectorData VectorData { get; }
         public TextureData BaseTextureData { get; }
         public int Size { get; }
@@ -189,13 +189,28 @@ namespace PlanetGen.FieldGen2.Types
         {
             if (_disposed) throw new ObjectDisposedException(nameof(DeformableFieldData));
 
+            Debug.Log(
+                $"Deforming terrain at center: {center.x}, {center.y}, radius: {radius:F1}, strength: {strength:F3}, additive: {additive}");
+
             int centerX = center.x;
             int centerY = center.y;
             int radiusInt = Mathf.CeilToInt(radius);
 
-            for (int y = Mathf.Max(0, centerY - radiusInt); y < Mathf.Min(Size, centerY + radiusInt); y++)
+            // Add this debug info
+            int minX = Mathf.Max(0, centerX - radiusInt);
+            int maxX = Mathf.Min(Size, centerX + radiusInt);
+            int minY = Mathf.Max(0, centerY - radiusInt);
+            int maxY = Mathf.Min(Size, centerY + radiusInt);
+
+            Debug.Log(
+                $"Processing area: X({minX}-{maxX}), Y({minY}-{maxY}), total pixels: {(maxX - minX) * (maxY - minY)}");
+
+            int pixelsModified = 0;
+            float totalChange = 0f;
+
+            for (int y = minY; y < maxY; y++)
             {
-                for (int x = Mathf.Max(0, centerX - radiusInt); x < Mathf.Min(Size, centerX + radiusInt); x++)
+                for (int x = minX; x < maxX; x++)
                 {
                     float distance = math.distance(new float2(x, y), new float2(centerX, centerY));
                     if (distance <= radius)
@@ -204,14 +219,26 @@ namespace PlanetGen.FieldGen2.Types
                         float effect = strength * falloff;
 
                         int index = y * Size + x;
+                        float oldValue = _modifiedScalarField[index];
 
                         if (additive)
                             _modifiedScalarField[index] = math.clamp(_modifiedScalarField[index] + effect, 0f, 1f);
                         else
                             _modifiedScalarField[index] = math.clamp(_modifiedScalarField[index] - effect, 0f, 1f);
+
+                        float newValue = _modifiedScalarField[index];
+                        float change = newValue - oldValue;
+
+                        if (Mathf.Abs(change) > 0.001f)
+                        {
+                            pixelsModified++;
+                            totalChange += Mathf.Abs(change);
+                        }
                     }
                 }
             }
+
+            Debug.Log($"Deformation complete: {pixelsModified} pixels modified, total change: {totalChange:F3}");
 
             _isDirty = true;
         }
