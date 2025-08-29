@@ -1,0 +1,456 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-7063200831616992041
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e534132e3d1e410093a3877173bdc490, type: 3}
+  m_Name: Simplex Noise
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -459.51465, y: -446.12827}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: -7063200831616992041}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: warpNoiseY
+        node: {fileID: -6240837201335320975}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  frequency: 4.62
+  amplitude: 1.59
+  seed: 12345
+  octaves: 4
+  lacunarity: 2
+  persistence: 0.5
+--- !u!114 &-6240837201335320975
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 560872f20bb94480b1ebb8485dc5a6c1, type: 3}
+  m_Name: Raster Domain Warp
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 72, y: -632}
+  folded: 0
+  ports:
+    keys:
+    - rasterInput
+    - warpNoiseX
+    - warpNoiseY
+    - output
+    values:
+    - _fieldName: rasterInput
+      _node: {fileID: -6240837201335320975}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 5713129273381687886}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: warpNoiseX
+      _node: {fileID: -6240837201335320975}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 1277561118898541402}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: warpNoiseY
+      _node: {fileID: -6240837201335320975}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: -7063200831616992041}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: output
+      _node: {fileID: -6240837201335320975}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: inputRaster
+        node: {fileID: 6940786810015637400}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  rasterInput: {fileID: 0}
+  output: {fileID: 0}
+  warpNoiseX: {fileID: 0}
+  warpNoiseY: {fileID: 0}
+  warpStrength: 9.31
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c43e1610d5e4f808910992162891dce, type: 3}
+  m_Name: old3
+  m_EditorClassIdentifier: 
+  nodes:
+  - {fileID: 2104905435081346368}
+  - {fileID: 4471998844192389230}
+  - {fileID: 4710186832519472888}
+  - {fileID: 5713129273381687886}
+  - {fileID: -6240837201335320975}
+  - {fileID: -7063200831616992041}
+  - {fileID: 1277561118898541402}
+  - {fileID: 8972927082550489544}
+  - {fileID: 6940786810015637400}
+  - {fileID: 6776538594016993990}
+  globalContribution: 1
+  gobalSeed: 0
+--- !u!114 &1277561118898541402
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e534132e3d1e410093a3877173bdc490, type: 3}
+  m_Name: Simplex Noise
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -456, y: -808}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: 1277561118898541402}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: warpNoiseX
+        node: {fileID: -6240837201335320975}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  frequency: 10
+  amplitude: 3
+  seed: 12345
+  octaves: 4
+  lacunarity: 2
+  persistence: 0.5
+--- !u!114 &2104905435081346368
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da09530cd3824ebf94690fe23f808ac1, type: 3}
+  m_Name: Vector Input
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -568, y: -56}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: 2104905435081346368}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: vectorInput
+        node: {fileID: 6776538594016993990}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  showInfo: 1
+--- !u!114 &4471998844192389230
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 219a14eca6fc45c497806917c34d4ab3, type: 3}
+  m_Name: Vector Output
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 168, y: -72}
+  folded: 0
+  ports:
+    keys:
+    - input
+    values:
+    - _fieldName: input
+      _node: {fileID: 4471998844192389230}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 6776538594016993990}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  input: {fileID: 0}
+  showInfo: 1
+--- !u!114 &4710186832519472888
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: decd4087e734403abea1a01fe8e954bb, type: 3}
+  m_Name: Raster Output
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 1000, y: -584}
+  folded: 0
+  ports:
+    keys:
+    - input
+    values:
+    - _fieldName: input
+      _node: {fileID: 4710186832519472888}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 6940786810015637400}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  input: {fileID: 0}
+  showInfo: 1
+--- !u!114 &5713129273381687886
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b35e46f5d7ca442790491b7dd83990fd, type: 3}
+  m_Name: Raster Input
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -424, y: -1000}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: 5713129273381687886}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: rasterInput
+        node: {fileID: -6240837201335320975}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 0
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  showInfo: 1
+--- !u!114 &6776538594016993990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32e0c4b5d3fe47eba30bb7c42e75f671, type: 3}
+  m_Name: Vector Circle Deformer
+  m_EditorClassIdentifier:
+  graph: {fileID: 11400000}
+  position: {x: -152, y: 24}
+  folded: 0
+  ports:
+    keys:
+    - vectorInput
+    - deformationInput
+    - output
+    values:
+    - _fieldName: vectorInput
+      _node: {fileID: 6776538594016993990}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 2104905435081346368}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: deformationInput
+      _node: {fileID: 6776538594016993990}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: 8972927082550489544}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: output
+      _node: {fileID: 6776538594016993990}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: input
+        node: {fileID: 4471998844192389230}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  vectorInput: {fileID: 0}
+  deformationInput: {fileID: 0}
+  output: {fileID: 0}
+  deformationAmplitude: 0.8
+--- !u!114 &6940786810015637400
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04bf5014b4484b5ba71e1682c4f5399c, type: 3}
+  m_Name: Fill Color
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: 456, y: -648}
+  folded: 0
+  ports:
+    keys:
+    - inputRaster
+    - output
+    values:
+    - _fieldName: inputRaster
+      _node: {fileID: 6940786810015637400}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: output
+        node: {fileID: -6240837201335320975}
+        reroutePoints: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+    - _fieldName: output
+      _node: {fileID: 6940786810015637400}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: input
+        node: {fileID: 4710186832519472888}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  inputRaster: {fileID: 0}
+  output: {fileID: 0}
+  fillColor: {r: 0, g: 1, b: 0.18409586, a: 1}
+--- !u!114 &8972927082550489544
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e534132e3d1e410093a3877173bdc490, type: 3}
+  m_Name: Simplex Noise
+  m_EditorClassIdentifier: 
+  graph: {fileID: 11400000}
+  position: {x: -568, y: 120}
+  folded: 0
+  ports:
+    keys:
+    - output
+    values:
+    - _fieldName: output
+      _node: {fileID: 8972927082550489544}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections:
+      - fieldName: deformationInput
+        node: {fileID: 6776538594016993990}
+        reroutePoints: []
+      _direction: 1
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
+  output: {fileID: 0}
+  frequency: 5.36
+  amplitude: 31.3
+  seed: 12345
+  octaves: 4
+  lacunarity: 2
+  persistence: 0.5

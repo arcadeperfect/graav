@@ -15,7 +15,6 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Raster
     /// If unconnected, it generates a new raster with only the specified color.
     /// </summary>
     [CreateNodeMenu("Raster/Fill Color")]
-    [NodeTint("#8888FF")] // A light blue tint for raster generator/source nodes
     public class FillColorNode : BaseNode, IPlanetDataOutput
     {
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]

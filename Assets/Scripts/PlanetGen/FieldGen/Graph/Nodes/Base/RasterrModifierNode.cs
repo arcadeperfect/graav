@@ -10,7 +10,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Base
     /// Base class for all nodes that take an existing RasterData as input and modify it.
     /// Handles the common logic of scheduling the input raster and setting up the output buffer.
     /// </summary>
-    [NodeTint("#81d975")] // Consistent tint for RasterModifierNode derived classes
+    [NodeTint("#FF6B35")] // Orange tint for all RasterModifierNode derived classes
     public abstract class RasterModifierNode : BaseNode, IPlanetDataOutput
     {
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
