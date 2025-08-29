@@ -33,7 +33,7 @@ MonoBehaviour:
       _dynamic: 0
   output: {fileID: 0}
   frequency: 10.64
-  amplitude: 9.2
+  amplitude: 2.73
   seed: 12331.1
   octaves: 4
   lacunarity: 2
@@ -51,7 +51,7 @@ MonoBehaviour:
   m_Name: Vector Circle Expander
   m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleExpanderNode
   graph: {fileID: 11400000}
-  position: {x: 8, y: 136}
+  position: {x: 104, y: 24}
   folded: 0
   ports:
     keys:
@@ -62,7 +62,10 @@ MonoBehaviour:
       _node: {fileID: -6735227374477596016}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: output
+        node: {fileID: -6709080615956600172}
+        reroutePoints: []
       _direction: 0
       _connectionType: 1
       _typeConstraint: 2
@@ -71,7 +74,10 @@ MonoBehaviour:
       _node: {fileID: -6735227374477596016}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: input
+        node: {fileID: 4471998844192389230}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -92,7 +98,7 @@ MonoBehaviour:
   m_Name: Vector Circle Deformer
   m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleDeformerNode
   graph: {fileID: 11400000}
-  position: {x: -40.5, y: -186.5}
+  position: {x: -152, y: 24}
   folded: 0
   ports:
     keys:
@@ -129,8 +135,8 @@ MonoBehaviour:
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
-      - fieldName: input
-        node: {fileID: 4471998844192389230}
+      - fieldName: vectorInput
+        node: {fileID: -6735227374477596016}
         reroutePoints: []
       _direction: 1
       _connectionType: 1
@@ -139,7 +145,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 1.03
+  deformationAmplitude: 1.16
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -214,7 +220,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 31.06
+  warpStrength: 28.25
 --- !u!114 &-1891964609331708947
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -310,8 +316,8 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 10
-  amplitude: 2.57
+  frequency: 9.86
+  amplitude: 2.42
   seed: 12345
   octaves: 4
   lacunarity: 2
@@ -362,7 +368,7 @@ MonoBehaviour:
   m_Name: Vector Output
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 440, y: -168}
+  position: {x: 344, y: 24}
   folded: 0
   ports:
     keys:
@@ -374,7 +380,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
-        node: {fileID: -6709080615956600172}
+        node: {fileID: -6735227374477596016}
         reroutePoints: []
       _direction: 0
       _connectionType: 1

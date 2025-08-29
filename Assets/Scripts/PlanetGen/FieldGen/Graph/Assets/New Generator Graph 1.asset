@@ -51,7 +51,7 @@ MonoBehaviour:
   m_Name: Vector Circle Expander
   m_EditorClassIdentifier: Assembly-CSharp:PlanetGen.FieldGen2.Graph.Nodes.Vector:VectorCircleExpanderNode
   graph: {fileID: 11400000}
-  position: {x: -201.5, y: 5}
+  position: {x: -88, y: -136}
   folded: 0
   ports:
     keys:
@@ -84,7 +84,7 @@ MonoBehaviour:
       _dynamic: 0
   vectorInput: {fileID: 0}
   output: {fileID: 0}
-  expansionAmount: -0.01
+  expansionAmount: -0.12
 --- !u!114 &-6240837201335320975
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -244,10 +244,7 @@ MonoBehaviour:
       _node: {fileID: 2104905435081346368}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections:
-      - fieldName: vectorInput
-        node: {fileID: -6735227374477596016}
-        reroutePoints: []
+      connections: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2

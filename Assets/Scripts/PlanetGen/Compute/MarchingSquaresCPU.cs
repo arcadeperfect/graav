@@ -39,7 +39,7 @@ namespace PlanetGen.Compute
         /// <summary>
         /// Generates line segments from scalar field data using a Burst-compiled parallel job.
         /// </summary>
-        public static NativeList<float4> GenerateSegmentsBurst(DeformableFieldData fieldData, float isoValue, float worldScale)
+        public static NativeList<float4> GenerateSegmentsBurst(DeformableFieldData fieldData, float isoValue)
         {
             int width = fieldData.Size;
             int cellCount = (width - 1) * (width - 1);
@@ -52,8 +52,7 @@ namespace PlanetGen.Compute
                 ScalarField = fieldData.ModifiedScalarField,
                 Width = width,
                 IsoValue = isoValue,
-                Segments = segments.AsParallelWriter(),
-                WorldScale = worldScale
+                Segments = segments.AsParallelWriter()
             };
 
             JobHandle handle = job.Schedule(cellCount, 64);
@@ -126,7 +125,6 @@ namespace PlanetGen.Compute
             [ReadOnly] public NativeArray<float> ScalarField;
             [ReadOnly] public int Width;
             [ReadOnly] public float IsoValue;
-            [ReadOnly] public float WorldScale;
             public NativeList<float4>.ParallelWriter Segments;
 
             private float2 InterpolateEdge(float2 p1, float2 p2, float v1, float v2)
@@ -135,9 +133,9 @@ namespace PlanetGen.Compute
                 return math.lerp(p1, p2, t);
             }
 
-            private float2 TextureToNormalized(float2 texCoord, float worldScale)
+            private float2 TextureToNormalized(float2 texCoord)
             {
-                return (texCoord / new float2(Width, Width) * 2.0f - 1.0f) * worldScale;
+                return (texCoord / new float2(Width, Width)) * 2.0f - 1.0f;
             }
             
             public void Execute(int index)
@@ -163,10 +161,10 @@ namespace PlanetGen.Compute
                 float2 edge2_p = InterpolateEdge(new float2(x, y + 1), new float2(x + 1, y + 1), v01, v11);
                 float2 edge3_p = InterpolateEdge(new float2(x, y), new float2(x, y + 1), v00, v01);
                 
-                float2 edge0 = TextureToNormalized(edge0_p, WorldScale);
-                float2 edge1 = TextureToNormalized(edge1_p, WorldScale);
-                float2 edge2 = TextureToNormalized(edge2_p, WorldScale);
-                float2 edge3 = TextureToNormalized(edge3_p, WorldScale);
+                float2 edge0 = TextureToNormalized(edge0_p);
+                float2 edge1 = TextureToNormalized(edge1_p);
+                float2 edge2 = TextureToNormalized(edge2_p);
+                float2 edge3 = TextureToNormalized(edge3_p);
                 
                 switch (caseIndex)
                 {
