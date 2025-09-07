@@ -17,6 +17,9 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
         [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
         public VectorPort vectorInput;
 
+        [Input(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
+        public FloatPort noiseInput;
+
         [Output(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]
         public VectorPort output;
 
@@ -24,6 +27,10 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
         [Range(-0.5f, 0.5f)]
         [Tooltip("Amount to expand the circle (positive = expand, negative = contract)")]
         public float expansionAmount = 0.1f;
+
+        [Range(0f, 1f)]
+        [Tooltip("Amplitude of noise-based expansion variation")]
+        public float noiseAmplitude = 0.1f;
 
         public override object GetValue(NodePort port)
         {
@@ -39,6 +46,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
             TempBufferManager tempBuffers, ref VectorData outputBuffer)
         {
             var vectorNode = GetInputValue<BaseNode>(nameof(vectorInput));
+            var noiseNode = GetInputValue<BaseNode>(nameof(noiseInput));
 
             if (!(vectorNode is IVectorOutput vectorOutput))
             {
@@ -56,6 +64,19 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
             JobHandle vectorHandle =
                 vectorOutput.ScheduleVector(dependency, textureSize, tempBuffers, ref inputVectorBuffer);
 
+            JobHandle finalHandle = vectorHandle;
+            NativeArray<float> noiseBuffer = default;
+            bool hasNoise = false;
+
+            // Handle optional noise input
+            if (noiseNode is IFloatOutput noiseOutput)
+            {
+                noiseBuffer = new NativeArray<float>(textureSize * textureSize, Allocator.Persistent);
+                tempBuffers.FloatBuffers.Add(noiseBuffer);
+                finalHandle = noiseOutput.ScheduleFloat(vectorHandle, textureSize, tempBuffers, ref noiseBuffer);
+                hasNoise = true;
+            }
+
             // Create and schedule the expansion job
             var expandJob = new VectorExpandJob
             {
@@ -63,12 +84,25 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
                 OutputVertices = outputBuffer.Vertices,
                 textureSize = textureSize,
                 expansionAmount = this.expansionAmount,
+                noiseAmplitude = this.noiseAmplitude,
+                noiseMap = hasNoise ? noiseBuffer : default,
+                hasNoise = hasNoise,
                 globalContributionMask = context.hasGlobalMask ? context.globalContributionMask : default,
                 hasGlobalMask = context.hasGlobalMask
             };
+            
+            
+            JobHandle expandHandle = expandJob.Schedule(inputVectorBuffer.Count, 64, finalHandle);
+            
+            
+            // expandHandle.Complete();
+            // Debug.Log($"First noise value: {noiseBuffer[0]}");
 
-            JobHandle expandHandle = expandJob.Schedule(inputVectorBuffer.Count, 64, vectorHandle);
-
+            
+            
+            
+            
+            
             // Set output vertex count to match input
             outputBuffer.SetVertexCount(inputVectorBuffer.Count);
 
@@ -85,6 +119,9 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
 
         [ReadOnly] public int textureSize;
         [ReadOnly] public float expansionAmount;
+        [ReadOnly] public float noiseAmplitude;
+        [ReadOnly] public NativeArray<float> noiseMap;
+        [ReadOnly] public bool hasNoise;
         [ReadOnly] public NativeArray<float> globalContributionMask;
         [ReadOnly] public bool hasGlobalMask;
 
@@ -102,8 +139,19 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
                 return;
             }
 
+            // Calculate base expansion amount
+            float totalExpansion = expansionAmount;
+
+            // Add noise-based variation if noise is available
+            if (hasNoise && noiseMap.IsCreated)
+            {
+                float noiseValue = SampleNoise(inputVertex, textureSize, noiseMap);
+                // Noise modulates the expansion amount
+                totalExpansion += (-noiseValue - 0.5f) * 2.0f * noiseAmplitude;
+            }
+
             // Calculate expanded position
-            float2 expandedVertex = inputVertex + (direction * expansionAmount);
+            float2 expandedVertex = inputVertex + (direction * totalExpansion);
 
             float contribution = 1.0f;
 
@@ -116,6 +164,17 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Vector
             float2 finalVertex = math.lerp(inputVertex, expandedVertex, contribution);
 
             OutputVertices[index] = finalVertex;
+        }
+
+        // Sample noise from 2D texture using Cartesian coordinates
+        private float SampleNoise(float2 position, int texSize, NativeArray<float> noiseMap)
+        {
+            // Convert world position to texture UV coordinates [0, 1]
+            // Assuming the texture represents a [-1, 1] world space
+            float u = (position.x + 1.0f) * 0.5f;
+            float v = (position.y + 1.0f) * 0.5f;
+
+            return SampleTextureBilinear(u, v, texSize, noiseMap);
         }
 
         // Sample from 2D texture using Cartesian coordinates

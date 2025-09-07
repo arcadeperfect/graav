@@ -10,6 +10,7 @@ namespace PlanetGen.FieldGen2.Graph.Nodes.Base
     /// These nodes have no inputs and always output a FloatPort with noise data.
     /// They are data sources and do not apply global contribution masks.
     /// </summary>
+    [NodeTint("#855157")]
     public abstract class NoiseGeneratorNode : BaseNode, IFloatOutput
     {
         [Output(ShowBackingValue.Never, ConnectionType.Override, TypeConstraint.Strict)]

@@ -57,6 +57,7 @@ MonoBehaviour:
     keys:
     - vectorInput
     - output
+    - noiseInput
     values:
     - _fieldName: vectorInput
       _node: {fileID: -6735227374477596016}
@@ -82,9 +83,20 @@ MonoBehaviour:
       _connectionType: 1
       _typeConstraint: 2
       _dynamic: 0
+    - _fieldName: noiseInput
+      _node: {fileID: -6735227374477596016}
+      _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
+        Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
+      connections: []
+      _direction: 0
+      _connectionType: 1
+      _typeConstraint: 2
+      _dynamic: 0
   vectorInput: {fileID: 0}
+  noiseInput: {fileID: 0}
   output: {fileID: 0}
   expansionAmount: 0.08
+  noiseAmplitude: 0.1
 --- !u!114 &-6709080615956600172
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -244,10 +256,7 @@ MonoBehaviour:
       _node: {fileID: -1891964609331708947}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.FloatPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections:
-      - fieldName: deformationInput
-        node: {fileID: -6709080615956600172}
-        reroutePoints: []
+      connections: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -345,10 +354,7 @@ MonoBehaviour:
       _node: {fileID: 2104905435081346368}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.VectorPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections:
-      - fieldName: vectorInput
-        node: {fileID: -6709080615956600172}
-        reroutePoints: []
+      connections: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2

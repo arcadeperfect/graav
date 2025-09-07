@@ -273,14 +273,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   fieldRes: 512
   graphLayers:
-  - graph: {fileID: 11400000, guid: c992b04c6b73045be92a83179100c61f, type: 2}
+  - graph: {fileID: 11400000, guid: 07c3955327526452cba8ed2c740d98cb, type: 2}
     baseWeight: 1
-    weightSeed: 101
-    seed: 0
-  - graph: {fileID: 11400000, guid: 53f0676b4d9d64f6ba723eaef8aea905, type: 2}
-    baseWeight: 1
-    weightSeed: 79
-    seed: 0
+    weightSeed: 337
+    seed: 0.45
   circleVertexCount: 64
   circleRadius: 0.5
   dominanceNoiseFrequency: 2

@@ -150,7 +150,7 @@ namespace PlanetGen
             }
             else if (computeConstantly)
             {
-                // Comment this out temporarily to reduce log spam
+                // Comment this out temporarily to reduce log toss
                 // Debug.Log("[DEBUG] Compute constantly triggered");
                 RegenCompute();
             }

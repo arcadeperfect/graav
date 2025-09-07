@@ -74,7 +74,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 10
+  warpStrength: 0
 --- !u!114 &-5455959534038101726
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -174,7 +174,7 @@ MonoBehaviour:
       _dynamic: 0
   output: {fileID: 0}
   frequency: 10
-  amplitude: 1
+  amplitude: 16.97
   seed: 12345
   octaves: 4
   lacunarity: 2
@@ -239,7 +239,7 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   deformationInput: {fileID: 0}
   output: {fileID: 0}
-  deformationAmplitude: 0.1
+  deformationAmplitude: 0
 --- !u!114 &-4236991102551710351
 MonoBehaviour:
   m_ObjectHideFlags: 0
