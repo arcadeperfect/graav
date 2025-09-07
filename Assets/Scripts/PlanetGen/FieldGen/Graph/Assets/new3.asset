@@ -99,7 +99,10 @@ MonoBehaviour:
       _node: {fileID: -8446240665652591376}
       _typeQualifiedName: PlanetGen.FieldGen2.Graph.Nodes.Base.PlanetDataPort, Assembly-CSharp,
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: input
+        node: {fileID: -5455959534038101726}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -108,7 +111,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 0
+  warpStrength: 5.91
 --- !u!114 &-7150981242292530734
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -141,9 +144,9 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 14.22
-  amplitude: 1
-  seed: 1
+  frequency: 27.67
+  amplitude: 0.2
+  seed: 1.1
   phaseDegrees: 0
   directionDegrees: 1
 --- !u!114 &-6336637422964139178
@@ -206,7 +209,7 @@ MonoBehaviour:
         Version=0.0.0.0, Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: output
-        node: {fileID: -4236991102551710351}
+        node: {fileID: -8446240665652591376}
         reroutePoints: []
       _direction: 0
       _connectionType: 1
@@ -329,9 +332,6 @@ MonoBehaviour:
       - fieldName: rasterInput
         node: {fileID: -8446240665652591376}
         reroutePoints: []
-      - fieldName: input
-        node: {fileID: -5455959534038101726}
-        reroutePoints: []
       _direction: 1
       _connectionType: 0
       _typeConstraint: 2
@@ -370,7 +370,7 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 4.83
+  frequency: 7.17
   amplitude: 4.76
   seed: 4.22
   phaseDegrees: 4.74
@@ -502,8 +502,8 @@ MonoBehaviour:
   vectorInput: {fileID: 0}
   noiseInput: {fileID: 0}
   output: {fileID: 0}
-  expansionAmount: 0.33
-  noiseAmplitude: 0.3
+  expansionAmount: 0.19
+  noiseAmplitude: 0.06
 --- !u!114 &5631642533391906832
 MonoBehaviour:
   m_ObjectHideFlags: 0

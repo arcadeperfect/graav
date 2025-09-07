@@ -29,7 +29,7 @@ namespace PlanetGen.FieldGen2
         [Range(0f, 1f)] [Tooltip("Base weight for this layer's influence")]
         public float baseWeight = 1f;
 
-        [Range(0f, 1000f)] [Tooltip("Random seed for this layer's weight distribution")]
+        [Range(1f, 1000f)] [Tooltip("Random seed for this layer's weight distribution")]
         public float weightSeed = 0f; // Used for unique noise offset for this layer
 
         [NonSerialized] public NativeArray<float> weightMask;
