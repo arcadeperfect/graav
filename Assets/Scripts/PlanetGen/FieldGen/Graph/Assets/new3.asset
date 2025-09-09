@@ -111,7 +111,7 @@ MonoBehaviour:
   output: {fileID: 0}
   warpNoiseX: {fileID: 0}
   warpNoiseY: {fileID: 0}
-  warpStrength: 5.91
+  warpStrength: 0
 --- !u!114 &-7150981242292530734
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -370,7 +370,7 @@ MonoBehaviour:
       _typeConstraint: 2
       _dynamic: 0
   output: {fileID: 0}
-  frequency: 7.17
+  frequency: 10.35
   amplitude: 4.76
   seed: 4.22
   phaseDegrees: 4.74

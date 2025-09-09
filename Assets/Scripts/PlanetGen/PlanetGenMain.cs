@@ -85,7 +85,8 @@ namespace PlanetGen
         public int maxDebugSegments = 20000;
         public bool computeConstantly;
 
-        [Header("Shapes Rendering")] public ShapesPolylineRenderer shapesRenderer;
+        [Header("Shapes Rendering")] 
+        ShapesPolylineRenderer shapesRenderer;
         public bool enableShapesRendering = true;
 
         #endregion
@@ -208,6 +209,8 @@ namespace PlanetGen
             cpuSegments = new NativeList<float4>(Allocator.Persistent);
             cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
             colliderData = new NativeList<MarchingSquaresCPU.ColliderData>(Allocator.Persistent);
+            
+            shapesRenderer = GetComponent<ShapesPolylineRenderer>();
         }
 
         void RegenField()

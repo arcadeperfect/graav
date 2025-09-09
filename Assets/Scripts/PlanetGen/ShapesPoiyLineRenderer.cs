@@ -51,6 +51,10 @@ namespace PlanetGen
             {
                 UpdateRenderBounds();
             }
+            else
+            {
+                Debug.Log("didn't update bounds");
+            }
         }
         
         /// <summary>
@@ -61,6 +65,7 @@ namespace PlanetGen
             NativeList<MarchingSquaresCPU.ColliderData> colliderData,
             MarchingSquaresCPU.PolylineData polylineData)
         {
+            print("updating polylines");
             if (!colliderData.IsCreated || !polylineData.AllPoints.IsCreated)
             {
                 ClearPolylines();

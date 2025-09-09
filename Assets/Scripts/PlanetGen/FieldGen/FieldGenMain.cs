@@ -369,7 +369,7 @@ namespace PlanetGen.FieldGen2
                 .ValidatePowerOfTwo(fieldRes, nameof(fieldRes))
                 .ValidatePositive(dominanceNoiseFrequency, nameof(dominanceNoiseFrequency))
                 .ValidatePositive(dominanceSharpness, nameof(dominanceSharpness))
-                .ValidateRange(circleVertexCount, 3, 1000, nameof(circleVertexCount))
+                .ValidateRange(circleVertexCount, 3, 65536, nameof(circleVertexCount))
                 .ValidateRange(circleRadius, 0.01f, 10f, nameof(circleRadius))
                 .WarnIf(fieldRes > 2048, "Large texture sizes may impact performance")
                 .WarnIf(circleVertexCount > 256, "High vertex count may impact performance")
