@@ -6,11 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="a9278859-e578-4fdd-8b4e-390579342de5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.Graav/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Graav/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/FieldGen/FieldGenMain.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/FieldGen/FieldGenMain.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/FieldGen/Graph/Assets/new3.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/FieldGen/Graph/Assets/new3.asset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/PlanetGenMain.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/PlanetGenMain.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/PlayerControls.inputactions" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/PlayerControls.inputactions.meta" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/ShapesPoiyLineRenderer.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/PlanetGen/ShapesPoiyLineRenderer.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -141,7 +137,7 @@
       <workItem from="1756398627120" duration="30000" />
       <workItem from="1756479022033" duration="9121000" />
       <workItem from="1757243656407" duration="7728000" />
-      <workItem from="1757414409292" duration="5465000" />
+      <workItem from="1757414409292" duration="7909000" />
     </task>
     <servers />
   </component>

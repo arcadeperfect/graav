@@ -85,9 +85,8 @@ namespace PlanetGen
         public int maxDebugSegments = 20000;
         public bool computeConstantly;
 
-        [Header("Shapes Rendering")] 
-        ShapesPolylineRenderer shapesRenderer;
-        public bool enableShapesRendering = true;
+        // [Header("Shapes Rendering")] ShapesPolylineRenderer shapesRenderer;
+        // public bool enableShapesRendering = true;
 
         #endregion
 
@@ -114,10 +113,16 @@ namespace PlanetGen
         private List<EdgeCollider2D> cachedColliders = new List<EdgeCollider2D>();
 
         // Performance tracking
-        private float lastCPUMarchingSquaresTime;
+        // private float lastCPUMarchingSquaresTime;
         private int lastCPUSegmentCount;
         private float lastPolylineGenerationTime;
         private int lastPolylineCount;
+
+        #endregion
+
+        #region Events
+
+        public System.Action<NativeList<float4>, MarchingSquaresCPU.PolylineData> OnCPUPolylinesGenerated;
 
         #endregion
 
@@ -209,8 +214,6 @@ namespace PlanetGen
             cpuSegments = new NativeList<float4>(Allocator.Persistent);
             cpuPolylines = new MarchingSquaresCPU.PolylineData(Allocator.Persistent);
             colliderData = new NativeList<MarchingSquaresCPU.ColliderData>(Allocator.Persistent);
-            
-            shapesRenderer = GetComponent<ShapesPolylineRenderer>();
         }
 
         void RegenField()
@@ -407,8 +410,6 @@ namespace PlanetGen
         // }
         void RegenCompute()
         {
-            Debug.Log("[DEBUG] RegenCompute called");
-
             if (_workingFieldData?.IsValid != true)
             {
                 Debug.LogWarning("[DEBUG] RegenCompute: No valid working field data");
@@ -417,99 +418,14 @@ namespace PlanetGen
                 return;
             }
 
-            Debug.Log("[DEBUG] Working field data is valid, continuing...");
-
             // Sync any pending terrain modifications to GPU texture
             bool wasModified = _workingFieldData.SyncTextureIfDirty();
-            if (wasModified)
-            {
-                Debug.Log("[DEBUG] Terrain modifications synced to GPU");
-            }
 
-            // CPU Marching Squares - Re-enable this for colliders
             if (enableCPUMarchingSquares)
             {
-                Debug.Log("[DEBUG] Starting CPU marching squares");
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-                // Generate segments
-                if (cpuSegments.IsCreated) cpuSegments.Clear();
-                var newSegments = MarchingSquaresCPU.GenerateSegmentsBurst(
-                    _workingFieldData, marchingSquaresThreshold);
-
-                cpuSegments.AddRange(newSegments);
-                newSegments.Dispose();
-
-                lastCPUMarchingSquaresTime = stopwatch.ElapsedMilliseconds;
-                lastCPUSegmentCount = cpuSegments.Length;
-
-                Debug.Log($"[DEBUG] Generated {cpuSegments.Length} CPU segments in {lastCPUMarchingSquaresTime}ms");
-
-                // Generate polylines and colliders if needed
-                if (enablePolylineGeneration || createColliders || (enableShapesRendering && shapesRenderer != null))
-                {
-                    Debug.Log("[DEBUG] Extracting polylines and colliders");
-                    stopwatch.Restart();
-
-                    // Dispose old polyline data
-                    if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
-                    if (colliderData.IsCreated) colliderData.Dispose();
-
-                    // Extract polylines with colliders in one pass
-                    cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
-                        cpuSegments, out colliderData, 3, Allocator.Persistent); // Min 3 points for collider
-
-                    lastPolylineGenerationTime = stopwatch.ElapsedMilliseconds;
-                    lastPolylineCount = cpuPolylines.PolylineRanges.Length;
-
-                    Debug.Log(
-                        $"[DEBUG] Generated {lastPolylineCount} polylines and {colliderData.Length} colliders in {lastPolylineGenerationTime}ms");
-
-                    // Update Shapes renderer if enabled
-                    if (enableShapesRendering && shapesRenderer != null)
-                    {
-                        Debug.Log("[DEBUG] Updating Shapes polyline renderer");
-                        Stopwatch sw = Stopwatch.StartNew();
-                        shapesRenderer.UpdatePolylines(colliderData, cpuPolylines);
-                        sw.Stop();
-                        Debug.Log($"[DEBUG] Shapes polyline renderer updated in {sw.ElapsedMilliseconds}ms");
-                    }
-
-                    // Update colliders if enabled
-                    if (createColliders && colliderData.IsCreated && colliderData.Length > 0)
-                    {
-                        Debug.Log("[DEBUG] Updating colliders from data");
-                        UpdateCollidersFromData();
-                    }
-                    else if (!createColliders)
-                    {
-                        // Disable all colliders if creation is disabled
-                        Debug.Log("[DEBUG] Collider creation disabled, hiding existing colliders");
-                        foreach (var collider in cachedColliders)
-                        {
-                            if (collider != null) collider.enabled = false;
-                        }
-                    }
-                }
-
-                stopwatch.Stop();
-            }
-            else
-            {
-                // If CPU marching squares is disabled, also disable colliders and clear shapes
-                Debug.Log("[DEBUG] CPU marching squares disabled, hiding colliders and clearing shapes");
-                foreach (var collider in cachedColliders)
-                {
-                    if (collider != null) collider.enabled = false;
-                }
-
-                if (enableShapesRendering && shapesRenderer != null)
-                {
-                    shapesRenderer.ClearPolylines();
-                }
+                CpuMarchingSqares();
             }
 
-            Debug.Log("[DEBUG] About to dispatch compute pipeline");
 
             // GPU Compute Pipeline - dispatch with working data (which includes any modifications)
             var dispatchResult = computePipeline.Dispatch(_workingFieldData, gridResolution);
@@ -532,6 +448,60 @@ namespace PlanetGen
                     Debug.LogError($"[DEBUG] Dispatch failed in OnFailure: {error}");
                     ErrorHandler.LogError("PlanetGenMain.RegenCompute", $"Compute pipeline dispatch failed: {error}");
                 });
+        }
+
+        private void CpuMarchingSqares()
+        {
+            // CPU Marching Squares - Re-enable this for colliders
+            if (!enableCPUMarchingSquares)
+                return;
+
+            // Generate segments
+            if (cpuSegments.IsCreated) cpuSegments.Clear();
+            var newSegments = MarchingSquaresCPU.GenerateSegmentsBurst(
+                _workingFieldData, marchingSquaresThreshold);
+
+            cpuSegments.AddRange(newSegments);
+            newSegments.Dispose();
+
+
+            lastCPUSegmentCount = cpuSegments.Length;
+
+            // Generate polylines and colliders if needed
+            // if (enablePolylineGeneration || createColliders || (enableShapesRendering && shapesRenderer != null))
+
+            // Dispose old polyline data
+            if (cpuPolylines.AllPoints.IsCreated) cpuPolylines.Dispose();
+            if (colliderData.IsCreated) colliderData.Dispose();
+
+            // Extract polylines with colliders in one pass
+            cpuPolylines = MarchingSquaresCPU.ExtractPolylinesWithColliders(
+                cpuSegments, out colliderData, 3, Allocator.Persistent); // Min 3 points for collider
+
+
+            lastPolylineCount = cpuPolylines.PolylineRanges.Length;
+
+            Debug.Log(
+                $"[DEBUG] Generated {lastPolylineCount} polylines and {colliderData.Length} colliders in {lastPolylineGenerationTime}ms");
+
+
+            // Update colliders if enabled
+            if (createColliders && colliderData.IsCreated && colliderData.Length > 0)
+            {
+                Debug.Log("[DEBUG] Updating colliders from data");
+                UpdateCollidersFromData();
+            }
+            else if (!createColliders)
+            {
+                // Disable all colliders if creation is disabled
+                Debug.Log("[DEBUG] Collider creation disabled, hiding existing colliders");
+                foreach (var collider in cachedColliders)
+                {
+                    if (collider != null) collider.enabled = false;
+                }
+            }
+            
+            OnCPUPolylinesGenerated.Invoke(cpuSegments, cpuPolylines);
         }
 
 
